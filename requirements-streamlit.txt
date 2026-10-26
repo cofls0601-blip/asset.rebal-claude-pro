@@ -1,0 +1,11 @@
+# 1.64.0부터 표(DataFrame) 화면이 Array.prototype.toSorted(최신 브라우저 전용)를 사용해
+# 구형 브라우저에서 'Bad message format' 오류가 납니다. 1.63까지로 고정합니다.
+streamlit>=1.39,<1.64
+pandas>=2.2,<3
+numpy>=1.26,<3
+plotly>=5.24,<7
+yfinance>=0.2.54,<1
+exchange-calendars>=4.12,<5
+requests>=2.32,<3
+jinja2>=3.1,<4
+

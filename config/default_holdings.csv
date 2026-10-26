@@ -1,0 +1,5 @@
+strategy,account,ticker,name,market,category,role,target_pct,shares
+DEMO,샘플 계좌,360750,TIGER 미국S&P500,KR,선진국 주식,주식,60,0
+DEMO,샘플 계좌,148070,KIWOOM 국고채10년,KR,선진국 채권,채권,30,0
+DEMO,샘플 계좌,CASH,현금,KR,현금,대기현금,10,0
+
