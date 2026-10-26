@@ -12,7 +12,7 @@
 
 - 매달 월말 리밸런싱 업무를 줄이기 위한 개인 자산배분 앱(Streamlit).
 - 배포: Streamlit Community Cloud. 원장: Google Sheets(Apps Script 웹앱으로 읽기·쓰기, 8개 탭).
-- 앱 코드의 원본은 `cofls0601-blip/asset-rebal.1008`이다. 이 저장소(asset.rebal-claude-pro)는 처음에 비어 있었다. 코드를 옮겨 왔는지는 작업 기록을 본다.
+- 앱 코드는 `cofls0601-blip/asset-rebal.1008`(main 2d096ed)에서 이 저장소로 옮겨 왔다(2026-10-26). 이후 작업은 이 저장소에서 한다.
 - 가장 시간이 드는 일: 증권사 앱마다 들어가서 현재 가격 기준 자산 규모를 확인하는 것.
   - 해결 방향: 시트의 보유 수량 × 종가 × 환율로 앱이 계산한다. **증권사 계좌 연결은 하지 않는다(사용자 결정).**
 - 결과 확인 방법: 증권사 앱의 계좌 총액과 앱의 평가액을 눈으로 비교한다.
@@ -38,7 +38,8 @@
 ## 폴더 구조 (앱 코드 기준)
 
 ```
-streamlit_app.py          앱 화면(이번달·리밸런싱·주문안·기록·설정)
+streamlit_app.py          앱 화면(이번달·월말 점검·리밸런싱·주문안·기록·설정)
+streamlit_app/rules.py    월말 점검 판정(LAA·GSM·SSO·ISA)
 streamlit_app/manual.py   전략·종목 관리, 시세 조회, 평가(SMA·12개월 수익률)
 streamlit_app/data.py     표 형식 정의, 기본값, CSV 입출력
 streamlit_app/ledger.py   8개 원장 탭 구조, 백업/복원
@@ -51,7 +52,7 @@ docs/                     설정 안내, 전략 명세, 작업 기록
 tests/                    unittest (python -m unittest discover -s tests)
 ```
 
-`streamlit_app/rules.py`(규칙 판정)는 아직 없다. 예전 저장소 `asset-rebalance-streamlit`에 범용 규칙 엔진이 있었지만, 화면이 지저분하고 해당 없는 전략까지 판정하는 문제가 있어서 사용자가 사용을 중단했다. 새로 만들 때는 전략별 전용 규칙으로 만든다.
+`streamlit_app/rules.py`: 월말 점검 판정. LAA·GSM·SSO·ISA 전용 규칙이고, 그 밖의 전략은 판정하지 않는다. 예전 저장소 `asset-rebalance-streamlit`의 범용 규칙 엔진은 화면이 지저분하고 해당 없는 전략까지 판정하는 문제가 있어서 사용자가 쓰지 않았다. 범용 엔진으로 되돌리지 않는다.
 
 ## 지켜야 할 것
 

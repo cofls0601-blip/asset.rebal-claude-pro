@@ -8,6 +8,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from streamlit_app import manual as m
+from streamlit_app import rules
 from streamlit_app.tables import portfolio_table, weight_html
 from streamlit_app.data import DataError, load_default_holdings, load_default_strategies, normalize_strategies, to_csv_bytes, to_tsv
 from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_backup, parse_table
@@ -92,7 +93,7 @@ def picker(key):
 
 with st.sidebar:
     st.markdown('<div class="brand">◈ <b>Rebalance</b><small>PERSONAL ALLOCATION DESK</small></div>',unsafe_allow_html=True)
-    page=st.radio('메뉴',['이번달','리밸런싱','주문안','기록','설정'],label_visibility='collapsed')
+    page=st.radio('메뉴',['이번달','월말 점검','리밸런싱','주문안','기록','설정'],label_visibility='collapsed')
     today=datetime.now(ZoneInfo('Asia/Seoul')).date()
     day=st.date_input('종가 기준일',today,max_value=today)
     if st.button('종가 조회',type='primary',use_container_width=True):
@@ -108,11 +109,11 @@ with st.sidebar:
 
 st.markdown('<div class="eyebrow">YOUR MONTHLY ALLOCATION</div>',unsafe_allow_html=True)
 st.title(page)
-descriptions={'이번달':'전략별 자산 규모와 현재 비중을 한눈에 확인하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
+descriptions={'이번달':'전략별 자산 규모와 현재 비중을 한눈에 확인하세요.','월말 점검':'GSM → LAA → SSO → ISA 순서로 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
 st.caption(descriptions[page]+f' · 기준일 {day}')
 if st.session_state.get('notice'):st.success(st.session_state.pop('notice'))
 result=st.session_state.get('valued');view=result['view'] if result and result['date']==str(day) else None
-if page in ['이번달','리밸런싱','기록']:
+if page in ['이번달','월말 점검','리밸런싱','기록']:
     if view is None:st.info('사이드바의 종가 조회를 눌러 선택한 기준일의 평가를 불러오세요.')
     else:
         for error in result['errors']:st.warning(error)
@@ -144,6 +145,24 @@ if page=='이번달' and view is not None:
             lines.append(f'<div class="asset-line"><span>{escape(r["name"])}<small>{escape(r["ticker"])} · {escape(r["price_date"])}</small></span><span>{value}</span><b>{weight}</b></div>')
         cards.append(f'<article class="strategy-card"><div class="card-top"><h3>{escape(code)}</h3><span>{len(sub)}종목</span></div><small>{escape(str(sub.account.iloc[0]))}</small><div class="card-amount">{amount}</div><div class="asset-head"><span>종목</span><span>평가액</span><span>비중</span></div>{"".join(lines)}</article>')
     st.markdown('<div class="strategy-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
+
+elif page=='월말 점검' and view is not None:
+    st.caption('앱은 제안만 합니다. 「목표 비중에 반영」을 누른 전략만 목표 비중이 바뀌고, 매매는 주문안에서 직접 입력합니다.')
+    names=dict(zip(view.ticker,view.name))
+    for d in rules.evaluate(view,day,prices):
+        tone={'판정':'judged','판정 없음':'skipped','계산 불가':'blocked'}[d['status']]
+        badge='변경 제안' if d['changed'] else ('유지' if d['status']=='판정' else d['status'])
+        with st.container(border=True):
+            st.markdown(f'<div class="check-card {tone}"><div class="card-top"><h3>{escape(d["code"])}</h3><span class="check-badge">{escape(badge)}</span></div><p class="check-headline">{escape(d["headline"])}</p></div>',unsafe_allow_html=True)
+            if d['evidence']:table(pd.DataFrame(d['evidence']))
+            if d['changed']:
+                plan=pd.DataFrame([dict(종목=names.get(t,t),현재=d['current'].get(t,0.),제안=w) for t,w in d['targets'].items()])
+                st.dataframe(plan,hide_index=True,use_container_width=True,column_config={c:st.column_config.NumberColumn(format='%.2f%%') for c in ['현재','제안']})
+                if st.button('목표 비중에 반영',key='apply_rule'+d['code']):
+                    try:
+                        install({'holdings':m.validate_holdings(rules.apply_targets(st.session_state.holdings,d['code'],d['targets']))});refresh(day)
+                        st.session_state.notice=f'{d["code"]} 목표 비중을 제안대로 바꿨습니다. 주문안에서 매매 수량을 입력하세요.';st.rerun()
+                    except DataError as e:st.error(str(e))
 
 elif page=='리밸런싱' and view is not None:
     st.caption('현재 비중: 🔴 목표 초과 · 🟢 목표와 같음 · 🔵 목표 미달 (소수점 둘째 자리 기준)')
@@ -251,15 +270,15 @@ elif page=='설정':
         if not codes:st.info('전략 관리에서 전략을 먼저 추가하세요.')
         else:
             code=st.selectbox('전략',codes,key='asset_strategy');sub=h[h.strategy.eq(code)].copy()
-            st.caption('보유수량은 최종 잔고입니다. CASH 수량은 원화 현금 잔액입니다. 후보 종목은 수량 0으로 등록하세요.')
-            labels={'ticker':'티커','name':'종목명','market':'시장','category':'자산 분류','shares':'보유수량','target_pct':'목표비중 (%)'}
+            st.caption('보유수량은 최종 잔고입니다. CASH 수량은 원화 현금 잔액입니다. 후보 종목은 수량 0으로 등록하세요. 역할: LAA 필터 종목은 「필터」, SSO·ISA 매수 종목은 「레버리지」(비워 두면 종목명으로 찾습니다).')
+            labels={'ticker':'티커','name':'종목명','market':'시장','category':'자산 분류','role':'역할','shares':'보유수량','target_pct':'목표비중 (%)'}
             shown=sub[list(labels)].rename(columns=labels)
             with st.form('edit_assets'+code+str(st.session_state.revision)):
                 edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['티커','시장'],column_config={'보유수량':st.column_config.NumberColumn(min_value=0.,format='%.4f'),'목표비중 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%.2f')})
                 st.caption(f'현재 저장된 목표비중 합계 {sub.target_pct.sum():.2f}% · 합계 100%가 아니어도 작성 중인 계획을 저장할 수 있습니다.')
                 if st.form_submit_button('보유수량·목표비중 적용'):
                     try:
-                        updated=h.copy();updated.loc[sub.index,['name','category','shares','target_pct']]=edited[['종목명','자산 분류','보유수량','목표비중 (%)']].to_numpy()
+                        updated=h.copy();updated.loc[sub.index,['name','category','role','shares','target_pct']]=edited[['종목명','자산 분류','역할','보유수량','목표비중 (%)']].to_numpy()
                         st.session_state.demo=False;apply({'holdings':m.validate_holdings(updated)},'수량과 목표비중을 적용했습니다.')
                     except DataError as e:st.error(str(e))
             if abs(sub.target_pct.sum()-100)>.01:st.warning('목표비중 합계가 100%가 아닙니다. 리밸런싱 전에 조정하세요.')

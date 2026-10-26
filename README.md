@@ -42,6 +42,10 @@ streamlit run streamlit_app.py
 
 `apps_script/Code.gs`는 원본과 동일합니다. 설정은 `docs/SHEETS_SETUP.md`를 참고하세요. `SHEETS_WEBAPP_URL`, `SHEETS_SECRET`, `APP_PASSWORD`를 Streamlit Secrets에 지정합니다. 기존 원장 형식/8개 탭, 저장 충돌 확인과 저장 후 재조회 검증을 유지합니다. Strategies의 과거 규칙은 호환용 데이터이며 실행하지 않습니다.
 
+## 월말 점검
+
+GSM → LAA → SSO → ISA 순서로 규칙 판정 카드를 보여 줍니다. 앱은 제안만 하고, 「목표 비중에 반영」을 누른 전략만 목표 비중이 바뀝니다. 규칙은 `docs/전략 명세.md`, 코드는 `streamlit_app/rules.py`에 있습니다. 다른 전략은 판정하지 않습니다.
+
 ## 테스트
 
 ```bash

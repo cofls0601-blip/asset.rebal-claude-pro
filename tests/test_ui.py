@@ -48,4 +48,18 @@ class UITests(unittest.TestCase):
   self.assertEqual(list(at.dataframe[0].value.columns),['티커','종목명','현재 비중','목표 비중'])
   at.sidebar.radio[0].set_value('이번달').run();self.assertFalse(at.exception)
 
+ def test_monthly_check_proposes_and_applies_only_on_click(self):
+  at=self.start()
+  h=pd.DataFrame([dict(strategy='SSO',account='일반계좌 2',ticker='SSO',name='ProShares Ultra S&P500',market='US',category='선진국 주식',role='',target_pct=70.,shares=7.),
+                  dict(strategy='SSO',account='일반계좌 2',ticker='CASH',name='현금',market='KR',category='현금',role='현금',target_pct=30.,shares=300.)])
+  at.session_state['holdings']=m.validate_holdings(h);day=at.sidebar.date_input[0].value
+  idx=pd.bdate_range(end=pd.Timestamp(day),periods=260);spy=pd.Series(100.,index=idx);spy.iloc[-1]=84.
+  fetch=lambda t,market,d:spy if t=='SPY' else pd.Series([100. if t=='SSO' else 1.],index=[pd.Timestamp(d)])
+  v,e=m.valuation(at.session_state['holdings'],day,fetch);at.session_state['valued']={'date':str(day),'view':v,'errors':e}
+  with patch.object(m,'fetch_prices',side_effect=fetch):
+   at.sidebar.radio[0].set_value('월말 점검').run();self.assertFalse(at.exception)
+   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[70.,30.])
+   self.click(at,'목표 비중에 반영')
+  self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[85.,15.])
+
 if __name__=='__main__':unittest.main()
