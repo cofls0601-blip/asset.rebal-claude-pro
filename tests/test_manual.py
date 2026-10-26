@@ -41,10 +41,12 @@ class PortfolioTests(unittest.TestCase):
  def test_bad_prices(self):
   for day in ['2026-10-01','2026-08-01']:
    v,e=m.valuation(ws()['holdings'],DAY,lambda t,m,d:pd.Series([1.],index=[pd.Timestamp(day)]));self.assertTrue(e);self.assertTrue(v.weight.isna().all())
- def test_midmonth(self):
+ def test_chosen_date_counts_as_month_end(self):
+  # 9/15 is the user's rebalancing day: its close replaces September's month-end value.
   d=date(2026,9,15)
   def daily(t,market,day):return pd.concat([fetch(t,market,DAY),pd.Series([999.],index=[pd.Timestamp(d)])])
-  v,e=m.valuation(ws()['holdings'],d,daily);self.assertFalse(e);self.assertEqual(v.sma10.iloc[0],107.5)
+  v,e=m.valuation(ws()['holdings'],d,daily);self.assertFalse(e)
+  self.assertAlmostEqual(v.sma10.iloc[0],(sum(range(104,113))+999)/10);self.assertAlmostEqual(v.return12.iloc[0],(999/101-1)*100)
  def test_backup(self):
   w=ws();w['holdings']=m.add_asset(w['holdings'],'DEMO',{'ticker':'069500','market':'KR'},10,0);r=restore_backup(backup_bytes(w));self.assertEqual(r['holdings'].iloc[-1].ticker,'069500')
  def test_cached_quote_revaluation_and_category_totals(self):

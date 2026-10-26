@@ -166,7 +166,7 @@ elif page=='월말 점검' and view is not None:
 
 elif page=='리밸런싱' and view is not None:
     st.caption('현재 비중: 🔴 목표 초과 · 🟢 목표와 같음 · 🔵 목표 미달 (소수점 둘째 자리 기준)')
-    st.caption('SMA와 수익률: 완료된 월의 비수정 월말 종가 기준. 평가액은 원화 환산, 종가·SMA는 종목의 거래 통화입니다.')
+    st.caption('SMA와 수익률: 비수정 월말 종가 기준이며, 기준일 종가를 그달의 월말 종가로 씁니다. 평가액은 원화 환산, 종가·SMA는 종목의 거래 통화입니다.')
     for code,sub in view.groupby('strategy',sort=False):
         st.subheader(code)
         shown=sub[['strategy','ticker','name','shares','market','close','sma10','value','weight','target_pct','return12']].copy()

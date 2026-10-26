@@ -203,7 +203,8 @@ def valuation(h,day,fetch=fetch_prices):
             else:
                 market=market_of(r.ticker,r.market);s=get(r.ticker,market);close=float(s.iloc[-1]);price_date=str(s.index[-1].date())
                 fx=float(get('KRW=X','US').iloc[-1]) if market=='US' else 1.
-                months=s.resample('ME').last().dropna();months=months[months.index<=pd.Timestamp(day)]
+                # The chosen 기준일 close stands in for the month-end close of its month (clean() already drops later prices).
+                months=s.resample('ME').last().dropna()
                 if len(months)>=10:v.at[idx,'sma10']=float(months.tail(10).mean())
                 if len(months)>=13:v.at[idx,'return12']=float(months.iloc[-1]/months.iloc[-13]-1)*100
             v.loc[idx,['close','fx','value','price_date']]=[close,fx,float(r.shares)*close*fx,price_date]
