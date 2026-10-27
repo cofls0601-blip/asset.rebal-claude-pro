@@ -67,9 +67,20 @@ def prepare(data_dir: Path = DATA_DIR, krw: bool = False) -> Market:
     adj["GOLD_M"] = g
     fx = close["KRW=X"].dropna() if krw else None
     assets = dict(ASSETS)
+    local = ()
     if krw:
-        assets[CASH] = ["153130.KS", "114260.KS"]
-    m = build_market(close, adj, assets, fx=fx, local=(CASH,))
+        # 2009년 이전 원화 현금 자료가 없어 그 기간만 미국 3개월 국채 이자로 대신한다.
+        close["TBILL"], adj["TBILL"] = cash_idx, cash_idx
+        assets[CASH] = ["153130.KS", "114260.KS", "TBILL"]
+        # 국내 주식(EM 계좌): KODEX 200, 그 전은 EWY×환율
+        rate = fx.reindex(close.index).ffill(limit=5)
+        close["EWY_KRW"], adj["EWY_KRW"] = close["EWY"] * rate, adj["EWY"] * rate
+        # Yahoo의 KODEX 200 자료는 2007-03~2009-03이 비어 있어서 2009-04부터만 쓴다.
+        for frame in (close, adj):
+            frame.loc[frame.index < "2009-04-01", "069500.KS"] = np.nan
+        assets["KOSPI"] = ["069500.KS", "EWY_KRW"]
+        local = (CASH, "KOSPI")
+    m = build_market(close, adj, assets, fx=fx, local=local)
     spx_t = _daily_total(close, adj, ["SPY", "VFINX"])
     ndx_t = _daily_total(close, adj, ["QQQ", "^NDX"])
     syn = {

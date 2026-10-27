@@ -91,6 +91,16 @@ class StrategyTests(unittest.TestCase):
         self.assertAlmostEqual(w["LEV"], 0.0)
 
 
+class PortfolioTests(unittest.TestCase):
+    def test_combine_lets_each_account_grow_separately(self):
+        from backtest.portfolio import combine
+        idx = pd.date_range("2000-01-31", periods=2, freq="ME")
+        res = {"A": pd.DataFrame({"ret": [1.0, 0.0]}, index=idx), "B": pd.DataFrame({"ret": [0.0, 0.0]}, index=idx)}
+        port, share = combine(res, {"A": 50, "B": 50})
+        self.assertAlmostEqual(port.ret.iloc[0], .5)
+        self.assertAlmostEqual(share["A"].iloc[-1], 2 / 3)
+
+
 def ctx(m, i, weights=None, state=None):
     return Context(m, i, weights or {CASH: 1.0}, state if state is not None else {})
 

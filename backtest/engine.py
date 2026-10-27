@@ -30,7 +30,8 @@ class Market:
     extra: dict = field(default_factory=dict)
 
     def ret(self) -> pd.DataFrame:
-        return self.total.pct_change()
+        # 빈 달을 0%로 채우지 않는다. 자료가 빠진 달에 투자하면 run()이 오류를 낸다.
+        return self.total.pct_change(fill_method=None)
 
     def sma(self, n: int = 10) -> pd.DataFrame:
         return self.close.rolling(n).mean()
