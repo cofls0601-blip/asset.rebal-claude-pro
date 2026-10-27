@@ -1,0 +1,33 @@
+# 백테스트용 공개 시세를 Yahoo에서 받아 backtest/data/ 에 커밋한다.
+# (Claude 클라우드 컨테이너는 Yahoo 접속이 막혀 있어서 대신 받는다.)
+name: fetch-prices
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/backtest-*"]
+    paths:
+      - backtest/fetch_prices.py
+      - .github/workflows/fetch-prices.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install yfinance pandas
+      - run: python backtest/fetch_prices.py
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898713+github-actions[bot]@users.noreply.github.com"
+          git add backtest/data
+          git diff --cached --quiet && exit 0
+          git commit -m "Update backtest price data"
+          git push
