@@ -20,7 +20,7 @@ US_TICKERS = [
     "SPY", "QQQ", "DIA", "IWM", "EFA", "EEM", "VWO", "VEA", "VT", "URTH", "ACWI",
     "FEZ", "EZU", "VGK", "EWJ", "EWY", "IEF", "TLT", "SHY", "BIL", "SHV", "AGG",
     "BND", "LQD", "HYG", "TIP", "GLD", "IAU", "DBC", "PDBC", "GSG", "VNQ",
-    "SSO", "QLD", "UPRO", "TQQQ", "MTUM", "USMV",
+    "SSO", "QLD", "UPRO", "TQQQ", "MTUM", "USMV", "FDD", "IWD", "SCZ", "VTI",
     "VFINX", "VUSTX", "VFITX", "VWEHX", "VEURX", "VEIEX", "FSUTX",
     "^GSPC", "^NDX", "^IXIC", "^STOXX50E", "^IRX", "^TNX", "KRW=X", "GC=F",
 ]
