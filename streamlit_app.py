@@ -13,6 +13,7 @@ from streamlit_app.tables import portfolio_table, weight_html
 from streamlit_app.data import DataError, load_default_holdings, load_default_strategies, normalize_strategies, to_csv_bytes, to_tsv
 from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_backup, parse_table
 from streamlit_app.sheets_sync import load_workspace, save_workspace
+from streamlit_app.template import apply_template, load_template, mapping_table
 
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
@@ -109,7 +110,7 @@ with st.sidebar:
 
 st.markdown('<div class="eyebrow">YOUR MONTHLY ALLOCATION</div>',unsafe_allow_html=True)
 st.title(page)
-descriptions={'이번달':'전략별 자산 규모와 현재 비중을 한눈에 확인하세요.','월말 점검':'GSM → LAA → SSO → ISA 순서로 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
+descriptions={'이번달':'전략별 자산 규모와 현재 비중을 한눈에 확인하세요.','월말 점검':'GSM → LAA → SSO → ISA (→ EM 연 1회) 순서로 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
 st.caption(descriptions[page]+f' · 기준일 {day}')
 if st.session_state.get('notice'):st.success(st.session_state.pop('notice'))
 result=st.session_state.get('valued');view=result['view'] if result and result['date']==str(day) else None
@@ -149,7 +150,7 @@ if page=='이번달' and view is not None:
 elif page=='월말 점검' and view is not None:
     st.caption('앱은 제안만 합니다. 「목표 비중에 반영」을 누른 전략만 목표 비중이 바뀌고, 매매는 주문안에서 직접 입력합니다.')
     names=dict(zip(view.ticker,view.name))
-    for d in rules.evaluate(view,day,prices):
+    for d in rules.evaluate(view,day,prices,st.session_state.strategies):
         tone={'판정':'judged','판정 없음':'skipped','계산 불가':'blocked'}[d['status']]
         badge='변경 제안' if d['changed'] else ('유지' if d['status']=='판정' else d['status'])
         with st.container(border=True):
@@ -241,7 +242,7 @@ elif page=='기록':
     st.download_button('CSV 다운로드',to_csv_bytes(st.session_state[selected]),selected+'.csv','text/csv')
 
 elif page=='설정':
-    tabs=st.tabs(['전략 관리','종목·수량·비중','원장·백업'])
+    tabs=st.tabs(['전략 관리','종목·수량·비중','2027 전략 템플릿','원장·백업'])
     with tabs[0]:
         with st.expander('새 전략 추가',expanded=st.session_state.holdings.empty):
             with st.form('new_strategy'):
@@ -296,6 +297,24 @@ elif page=='설정':
                     try:apply({'holdings':m.delete_asset(h,code,ticker)},'종목을 삭제했습니다.')
                     except DataError as e:st.error(str(e))
     with tabs[2]:
+        try:template=load_template()
+        except (OSError,ValueError,DataError) as e:template=None;st.error(f'템플릿을 읽지 못했습니다: {e}')
+        if template:
+            st.caption(f'{template["name"]} · 시작일 {template["effective_date"]} · 계좌별 전략 매핑입니다. 보유 수량은 바꾸지 않고, 전략 규칙·종목 목록·고정 목표 비중만 맞춥니다.')
+            table(mapping_table(template))
+            if st.button('적용하면 바뀌는 내용 미리 보기'):
+                try:st.session_state.template_preview=apply_template(st.session_state.holdings,st.session_state.strategies,st.session_state.strategy_versions,template)
+                except DataError as e:st.error(str(e))
+            preview=st.session_state.get('template_preview')
+            if preview:
+                table(preview[3])
+                st.caption('금 현물(GC=F) 수량은 g ÷ 31.1035(트로이온스)로 입력하세요. 새 종목은 수량 0으로 들어가니 실제 수량을 「종목·수량·비중」에서 입력하세요.')
+                ok=st.checkbox('위 내용을 확인했습니다. 이전 전략 설정은 전략 이력에 보관됩니다.',key='template_confirm')
+                if st.button('2027 템플릿 적용',disabled=not ok,type='primary'):
+                    h,conf,versions,_=st.session_state.pop('template_preview')
+                    st.session_state.demo=False
+                    apply({'holdings':h,'strategies':conf,'strategy_versions':versions},'2027 전략 템플릿을 적용했습니다. Sheets에 저장하세요.')
+    with tabs[3]:
         st.caption('기존 Apps Script 연결과 Sheets 저장·충돌 확인 방식은 유지됩니다.')
         if connected and st.button('최신 원장 미리보기'):
             try:st.session_state.preview=load_workspace(remote['SHEETS_WEBAPP_URL'],remote['SHEETS_SECRET'])

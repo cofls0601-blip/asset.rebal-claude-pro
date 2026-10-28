@@ -1,0 +1,73 @@
+{
+  "name": "2027 전략",
+  "version": "2027",
+  "effective_date": "2027-01-01",
+  "source": "docs/연도별 전략.md",
+  "note": "보유 수량은 바꾸지 않는다. target_pct가 null이면 기존 목표 비중을 유지하고, 새 종목은 0으로 추가한다.",
+  "strategies": [
+    {
+      "code": "GSM", "account": "비과세 연금저축", "rule": "gsm", "params": {"top": 2},
+      "description": "SMA 위 후보(나스닥·S&P·선진국·유로배당·금·미국10년채) 중 12개월 수익률 상위 2개에 40%씩, 현금 20%. 모두 SMA 아래면 현금 100%",
+      "holdings": [
+        {"ticker": "133690", "name": "TIGER 미국나스닥100", "market": "KR", "category": "선진국 주식", "role": "", "target_pct": null},
+        {"ticker": "360750", "name": "TIGER 미국S&P500", "market": "KR", "category": "선진국 주식", "role": "", "target_pct": null},
+        {"ticker": "251350", "name": "KODEX MSCI선진국", "market": "KR", "category": "선진국 주식", "role": "", "target_pct": null},
+        {"ticker": "245350", "name": "TIGER 유로스탁스배당30", "market": "KR", "category": "선진국 주식", "role": "", "target_pct": null},
+        {"ticker": "411060", "name": "ACE KRX금현물", "market": "KR", "category": "금", "role": "", "target_pct": null},
+        {"ticker": "308620", "name": "KODEX 미국10년국채선물", "market": "KR", "category": "선진국 채권", "role": "", "target_pct": null},
+        {"ticker": "CASH", "name": "현금", "market": "KR", "category": "현금", "role": "현금", "target_pct": null}
+      ]
+    },
+    {
+      "code": "LAA", "account": "과세 연금저축", "rule": "laa", "params": {},
+      "description": "6자산 고정 비중. 나스닥·유로만 10개월 SMA 필터(아래면 그 몫 현금). 분기 말 복원 (2026과 같음)",
+      "holdings": [
+        {"ticker": "368590", "name": "RISE 미국나스닥100", "market": "KR", "category": "선진국 주식", "role": "필터", "target_pct": 12.5},
+        {"ticker": "245350", "name": "TIGER 유로스탁스배당30", "market": "KR", "category": "선진국 주식", "role": "필터", "target_pct": 12.5},
+        {"ticker": "379780", "name": "RISE 미국S&P500", "market": "KR", "category": "선진국 주식", "role": "", "target_pct": 12.5},
+        {"ticker": "251350", "name": "KODEX MSCI선진국", "market": "KR", "category": "선진국 주식", "role": "", "target_pct": 12.5},
+        {"ticker": "411060", "name": "ACE KRX금현물", "market": "KR", "category": "금", "role": "", "target_pct": 25},
+        {"ticker": "308620", "name": "KODEX 미국10년국채선물", "market": "KR", "category": "선진국 채권", "role": "", "target_pct": 25},
+        {"ticker": "CASH", "name": "현금", "market": "KR", "category": "현금", "role": "현금", "target_pct": 0}
+      ]
+    },
+    {
+      "code": "ISA", "account": "ISA", "rule": "isa_trend", "params": {"mode": "trend", "signal": "QQQ"},
+      "description": "QQQ가 10개월 SMA 위면 나스닥100 2배 100%, 아래면 현금 100% (재미 슬롯)",
+      "holdings": [
+        {"ticker": "418660", "name": "TIGER 미국나스닥100레버리지(합성)", "market": "KR", "category": "선진국 주식", "role": "레버리지", "target_pct": null},
+        {"ticker": "CASH", "name": "현금", "market": "KR", "category": "현금", "role": "현금", "target_pct": null}
+      ]
+    },
+    {
+      "code": "EM", "account": "일반계좌 1", "rule": "cap_check", "params": {"max_pct": 30, "month": 12},
+      "description": "국내 주식 장기 보유. 매년 12월에 한 종목이 계좌의 30%를 넘으면 넘는 만큼 줄이기",
+      "keep_other_holdings": true,
+      "holdings": [
+        {"ticker": "CASH", "name": "현금", "market": "KR", "category": "현금", "role": "현금", "target_pct": null}
+      ]
+    },
+    {
+      "code": "SPX", "account": "일반계좌 2", "rule": "hold", "params": {},
+      "description": "S&P500(SPY) 보유. 판정 없음. 2026 SSO 전략을 대신한다(SSO 매도 차익 양도세 확인)",
+      "holdings": [
+        {"ticker": "SPY", "name": "SPDR S&P 500 ETF", "market": "US", "category": "선진국 주식", "role": "", "target_pct": 100},
+        {"ticker": "CASH", "name": "현금", "market": "KR", "category": "현금", "role": "현금", "target_pct": 0}
+      ]
+    },
+    {
+      "code": "GOLD", "account": "금 현물", "rule": "hold", "params": {},
+      "description": "금 현물 보유. 매매 없음. 국제 금시세(GC=F) 기준 추정, 수량 = g ÷ 31.1035",
+      "holdings": [
+        {"ticker": "GC=F", "name": "금 현물 (국제 시세 기준 추정)", "market": "US", "category": "금", "role": "", "target_pct": 100}
+      ]
+    },
+    {
+      "code": "RESERVE", "account": "별도 현금", "rule": "hold", "params": {},
+      "description": "생활 안정용 현금. 총자산에는 포함, 판정에는 미사용",
+      "holdings": [
+        {"ticker": "CASH", "name": "별도 현금", "market": "KR", "category": "현금", "role": "현금", "target_pct": 100}
+      ]
+    }
+  ]
+}

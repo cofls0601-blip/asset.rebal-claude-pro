@@ -1,15 +1,20 @@
 """Strategy-specific monthly checks (docs/전략 명세.md).
 
-Only LAA, GSM, SSO and ISA are judged. Results are proposals: targets are
-strategy-internal weights (%) that the user may apply; nothing is applied here.
+Only LAA, GSM, SSO, ISA (and EM's yearly single-holding cap) are judged. Results are
+proposals: targets are strategy-internal weights (%) that the user may apply; nothing
+is applied here. Rule options come from the strategy table's params_json (2027 rules):
+  GSM {"top": 2}            split the invested share across the top-N candidates
+  ISA {"mode": "trend"}     QQQ above its 10-month SMA → leverage 100%, below → cash
+  EM  {"max_pct": 30, "month": 12}   yearly check that no holding exceeds max_pct
 """
 from datetime import timedelta
+import json
 import math
 import pandas as pd
 from streamlit_app.data import DataError
 from streamlit_app.manual import clean
 
-ORDER=['GSM','LAA','SSO','ISA']
+ORDER=['GSM','LAA','SSO','ISA','EM']
 QUARTER_MONTHS=(3,6,9,12)
 # Same staged weights as the spec: (drawdown threshold %, risk-asset weight %).
 LADDERS={
@@ -41,7 +46,15 @@ def current_weights(sub):
     return {r.ticker:float(r.weight) for r in sub.itertuples()}
 
 
-def check_gsm(sub,day,fetch):
+def monthly_trend(series,day):
+    """Close and 10-month SMA where the chosen day's close is this month's month-end close."""
+    s=series[series.index<=pd.Timestamp(day)]
+    months=s.resample('ME').last().dropna()
+    if len(months)<10:raise DataError('10개월 SMA 계산에 필요한 가격이 부족합니다')
+    return float(months.iloc[-1]),float(months.tail(10).mean())
+
+
+def check_gsm(sub,day,fetch,params=None):
     current=current_weights(sub);rows=sub[sub.ticker.ne('CASH')]
     if rows.empty:raise DataError('후보 종목이 없습니다')
     if rows[['close','sma10','return12']].isna().any().any():raise DataError('후보의 SMA·12개월 수익률 자료가 부족합니다')
@@ -52,9 +65,13 @@ def check_gsm(sub,day,fetch):
     if passed.empty:
         targets['CASH']=100.
         return decision('GSM','판정','모든 후보가 10개월 SMA 아래 → 현금 100%',evidence,targets,current)
-    winner=passed.sort_values(['return12','ticker'],ascending=[False,True]).iloc[0]
-    targets[winner.ticker]=GSM_INVEST;targets['CASH']=100-GSM_INVEST
-    return decision('GSM','판정',f'{winner["name"]} 선택 (12개월 {winner.return12:+.2f}%) → {GSM_INVEST:g}% 투자 · 현금 {100-GSM_INVEST:g}%',evidence,targets,current)
+    top=max(1,int((params or {}).get('top',1)))
+    winners=passed.sort_values(['return12','ticker'],ascending=[False,True]).head(top)
+    for t in winners.ticker:targets[t]=GSM_INVEST/len(winners)
+    targets['CASH']=100-GSM_INVEST
+    picked=', '.join(f'{w["name"]} (12개월 {w.return12:+.2f}%)' for _,w in winners.iterrows())
+    split=f'{GSM_INVEST:g}% 투자' if len(winners)==1 else f'각 {GSM_INVEST/len(winners):g}% 투자'
+    return decision('GSM','판정',f'{picked} 선택 → {split} · 현금 {100-GSM_INVEST:g}%',evidence,targets,current)
 
 
 def laa_filters(sub):
@@ -64,7 +81,7 @@ def laa_filters(sub):
     return sub[sub.ticker.ne('CASH')&names.apply(lambda n:any(w in n for w in LAA_FILTER_WORDS))]
 
 
-def check_laa(sub,day,fetch):
+def check_laa(sub,day,fetch,params=None):
     current=current_weights(sub)
     if 'CASH' not in current:raise DataError('CASH 행이 필요합니다')
     filters=laa_filters(sub)
@@ -93,7 +110,35 @@ def ladder_asset(code,sub):
     return rows.iloc[0]
 
 
-def check_ladder(code,sub,day,fetch):
+def check_trend(code,sub,day,fetch,params):
+    """2027 ISA: signal ETF above its 10-month SMA → leverage 100%, otherwise cash 100%."""
+    signal=params.get('signal','QQQ');current=current_weights(sub)
+    if 'CASH' not in current:raise DataError('CASH 행이 필요합니다')
+    asset=ladder_asset(code,sub);close,sma=monthly_trend(clean(fetch(signal,'US',day),day),day)
+    above=close>sma;weight=current[asset.ticker]
+    evidence=[{'기준':signal,'종가':round(close,2),'10개월 SMA':round(sma,2),'판정':'SMA 위' if above else 'SMA 아래','현재 비중(%)':round(weight,2)}]
+    targets={k:0. for k in current};targets['CASH']=0. if above else 100.
+    if above:targets[asset.ticker]=100.
+    headline=f'{signal} SMA 위 → {asset["name"]} 100%' if above else f'{signal} SMA 아래 → 현금 100%'
+    return decision(code,'판정',headline,evidence,targets,current)
+
+
+def check_cap(code,sub,day,fetch,params):
+    """Yearly single-holding cap: trim anything above max_pct of the account into cash."""
+    limit=float(params.get('max_pct',30));month=int(params.get('month',12))
+    if day.month!=month:return decision(code,'판정 없음',f'한 종목 {limit:g}% 상한은 매년 {month}월에 점검합니다 · 보유')
+    current=current_weights(sub)
+    if 'CASH' not in current:raise DataError('CASH 행이 필요합니다')
+    over={t:w for t,w in current.items() if t!='CASH' and w>limit}
+    names=dict(zip(sub.ticker,sub.name))
+    evidence=[{'종목':names.get(t,t),'현재 비중(%)':round(w,2),'판정':'상한 초과' if t in over else '상한 이내'} for t,w in current.items() if t!='CASH']
+    if not over:return decision(code,'판정',f'모든 종목이 계좌의 {limit:g}% 이하 → 유지',evidence,dict(current),current)
+    targets=dict(current)
+    for t,w in over.items():targets[t]=limit;targets['CASH']+=w-limit
+    return decision(code,'판정',f'{", ".join(names.get(t,t) for t in over)} {limit:g}% 초과 → 넘는 만큼 현금으로',evidence,targets,current)
+
+
+def check_ladder(code,sub,day,fetch,params=None):
     spec=LADDERS[code];current=current_weights(sub)
     if 'CASH' not in current:raise DataError('CASH 행이 필요합니다')
     asset=ladder_asset(code,sub);dd,close,high=drawdown(clean(fetch(spec['signal'],'US',day),day),day)
@@ -111,14 +156,30 @@ def check_ladder(code,sub,day,fetch):
     return decision(code,'판정',f'{spec["signal"]} {dd:.1f}% → 트리거 없음 · 유지',evidence,dict(current),current)
 
 
-def evaluate(view,day,fetch):
+def strategy_params(strategies):
+    """{code: params dict} from the strategy table; bad or missing JSON means 2026 defaults."""
+    if strategies is None or strategies.empty:return {}
+    out={}
+    for r in strategies.itertuples():
+        try:p=json.loads(r.params_json or '{}')
+        except (TypeError,ValueError):p={}
+        out[str(r.code)]=p if isinstance(p,dict) else {}
+    return out
+
+
+def evaluate(view,day,fetch,strategies=None):
     """Return one decision per strategy, judged strategies first in checklist order."""
-    out=[]
+    out=[];params=strategy_params(strategies)
     for code,sub in view.groupby('strategy',sort=False):
-        if code not in ORDER:
+        p=params.get(code,{})
+        if code not in ORDER or (code=='EM' and 'max_pct' not in p):
             out.append(decision(code,'판정 없음','규칙 판정 대상이 아닙니다 · 보유'));continue
         try:
-            out.append(check_ladder(code,sub,day,fetch) if code in LADDERS else (check_gsm if code=='GSM' else check_laa)(sub,day,fetch))
+            if code=='EM':d=check_cap(code,sub,day,fetch,p)
+            elif code=='ISA' and p.get('mode')=='trend':d=check_trend(code,sub,day,fetch,p)
+            elif code in LADDERS:d=check_ladder(code,sub,day,fetch,p)
+            else:d=(check_gsm if code=='GSM' else check_laa)(sub,day,fetch,p)
+            out.append(d)
         except Exception as e:out.append(decision(code,'계산 불가',str(e)))
     return sorted(out,key=lambda d:ORDER.index(d['code']) if d['code'] in ORDER else len(ORDER))
 

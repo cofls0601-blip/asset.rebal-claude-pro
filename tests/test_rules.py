@@ -96,6 +96,41 @@ class LadderTests(unittest.TestCase):
         self.assertEqual(high,100);self.assertAlmostEqual(dd,-20)
 
 
+def trend_prices(last):
+    """Monthly-ish closes at 100 for a year, the chosen day's close is `last`."""
+    idx=pd.bdate_range(end=pd.Timestamp(DAY),periods=300)
+    s=pd.Series(100.,index=idx);s.iloc[-1]=last;return lambda t,m,d:s
+
+
+class Rules2027Tests(unittest.TestCase):
+    def strategies(self,**params):
+        import json
+        return pd.DataFrame([dict(code=c,params_json=json.dumps(p)) for c,p in params.items()])
+
+    def test_gsm_top2_splits_invested_share(self):
+        v=gsm((90,100,30),(110,100,10),(120,100,20),(105,100,5))
+        d=r.evaluate(v,DAY,None,self.strategies(GSM={'top':2}))[0]
+        self.assertEqual(d['targets'],{'T0':0,'T1':40,'T2':40,'T3':0,'CASH':20})
+
+    def test_isa_trend_above_and_below(self):
+        name='TIGER 미국나스닥100레버리지(합성)'
+        up=r.evaluate(ladder('ISA',0,name),DAY,trend_prices(120),self.strategies(ISA={'mode':'trend'}))[0]
+        self.assertEqual(up['targets'],{'418660':100.,'CASH':0.})
+        down=r.evaluate(ladder('ISA',100,name),DAY,trend_prices(80),self.strategies(ISA={'mode':'trend'}))[0]
+        self.assertEqual(down['targets'],{'418660':0.,'CASH':100.})
+
+    def test_em_cap_only_in_december(self):
+        v=view('EM',[('005930','삼성전자','',100,None,None,40,0),('069500','KODEX 200','',100,None,None,50,0),('CASH','현금','현금',1,None,None,10,0)])
+        p=self.strategies(EM={'max_pct':30,'month':12})
+        self.assertEqual(r.evaluate(v,DAY,None,p)[0]['status'],'판정 없음')
+        d=r.evaluate(v,date(2026,12,30),None,p)[0]
+        self.assertEqual(d['targets'],{'005930':30.,'069500':30.,'CASH':40.})
+
+    def test_em_without_cap_param_is_not_judged(self):
+        v=view('EM',[('069500','KODEX 200','',100,None,None,100,100)])
+        self.assertEqual(r.evaluate(v,DAY,None)[0]['status'],'판정 없음')
+
+
 class EvaluateTests(unittest.TestCase):
     def test_order_and_unjudged_strategies(self):
         v=pd.concat([view('EM',[('069500','KODEX 200','',100,None,None,100,100)]),ladder('SSO',70),
