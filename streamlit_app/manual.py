@@ -6,6 +6,12 @@ import pandas as pd
 from streamlit_app.data import DataError, normalize_holdings, normalize_strategies
 
 
+# 금 현물 has no listed ticker: value it from the international gold future (USD/oz) in USD per gram.
+GOLD_TICKER='GOLD_G';GOLD_SOURCE='GC=F';GRAMS_PER_OZ=31.1035
+GOLD_ASSET=dict(ticker=GOLD_TICKER,name='금 현물 (국제 시세 추정)',market='US',category='금')
+CATEGORIES=['현금','선진국 주식','선진국 채권','신흥국 주식','신흥국 채권','금']
+
+
 def market_of(ticker,market='KR'):
     t=str(ticker).strip().upper()
     if t=='CASH' or t.endswith(('.KS','.KQ')):return 'KR'
@@ -79,6 +85,7 @@ def add_asset(h,code,asset,shares=0.,target=0.):
     if sub.empty:raise DataError('전략을 먼저 추가하세요')
     market=market_of(asset['ticker'],asset.get('market','KR'));ticker=canonical(asset['ticker'],market)
     if (sub.ticker==ticker).any():raise DataError('이미 등록된 종목입니다. 보유수량 표에서 수정하세요')
+    if ticker==GOLD_TICKER:asset={**GOLD_ASSET,**{k:v for k,v in asset.items() if k=='name' and v}}
     row=dict(strategy=code,account=sub.account.iloc[0],ticker=ticker,name=asset.get('name') or ticker,
         market=market,category=asset.get('category') or '미분류',role='',shares=number(shares,'보유수량'),target_pct=number(target,'목표비중',100))
     return validate_holdings(pd.concat([h,pd.DataFrame([row])],ignore_index=True))
@@ -201,7 +208,9 @@ def valuation(h,day,fetch=fetch_prices):
         try:
             if r.ticker=='CASH':close=fx=prev_close=prev_fx=1.;price_date=str(day)
             else:
-                market=market_of(r.ticker,r.market);s=get(r.ticker,market);close=float(s.iloc[-1]);price_date=str(s.index[-1].date())
+                market=market_of(r.ticker,r.market)
+                s=get(GOLD_SOURCE,'US')/GRAMS_PER_OZ if r.ticker==GOLD_TICKER else get(r.ticker,market)
+                close=float(s.iloc[-1]);price_date=str(s.index[-1].date())
                 # Previous trading day of each series, for the 전일 대비 change.
                 prev_close=float(s.iloc[-2]) if len(s)>1 else float('nan')
                 rates=get('KRW=X','US') if market=='US' else None

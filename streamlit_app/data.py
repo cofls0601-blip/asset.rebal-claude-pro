@@ -82,6 +82,9 @@ def normalize_holdings(frame: pd.DataFrame) -> pd.DataFrame:
                 raise DataError("혼합 자산 분류는 합계 100%인 JSON 객체여야 합니다")
     cash = df["ticker"].eq("CASH")
     df.loc[cash, ["market", "category"]] = ["KR", "현금"]
+    gold = df["ticker"].eq("GOLD_G")  # 금 현물 in grams, priced from the international gold future
+    df.loc[gold, "market"] = "US"
+    df.loc[gold & df["category"].isin(["", "미분류"]), "category"] = "금"
     df["category"] = df["category"].replace("", "미분류")
     return df
 

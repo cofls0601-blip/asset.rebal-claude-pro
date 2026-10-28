@@ -280,7 +280,7 @@ elif page=='설정':
             labels={'ticker':'티커','name':'종목명','market':'시장','category':'자산 분류','role':'역할','shares':'보유수량','target_pct':'목표비중 (%)'}
             shown=sub[list(labels)].rename(columns=labels)
             with st.form('edit_assets'+code+str(st.session_state.revision)):
-                edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['티커','시장'],column_config={'보유수량':st.column_config.NumberColumn(min_value=0.,format='%.4f'),'목표비중 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%.2f')})
+                edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['티커','시장'],column_config={'자산 분류':st.column_config.SelectboxColumn(options=list(dict.fromkeys(m.CATEGORIES+sub.category.tolist()))),'보유수량':st.column_config.NumberColumn(min_value=0.,format='%.4f'),'목표비중 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%.2f')})
                 st.caption(f'현재 저장된 목표비중 합계 {sub.target_pct.sum():.2f}% · 합계 100%가 아니어도 작성 중인 계획을 저장할 수 있습니다.')
                 if st.form_submit_button('보유수량·목표비중 적용'):
                     try:
@@ -288,6 +288,9 @@ elif page=='설정':
                         st.session_state.demo=False;apply({'holdings':m.validate_holdings(updated)},'수량과 목표비중을 적용했습니다.')
                     except DataError as e:st.error(str(e))
             if abs(sub.target_pct.sum()-100)>.01:st.warning('목표비중 합계가 100%가 아닙니다. 리밸런싱 전에 조정하세요.')
+            if m.GOLD_TICKER not in set(sub.ticker) and st.button('금 현물(g) 항목 추가',key='add_gold'+code,help='국제 금시세(달러/온스) × 원/달러 ÷ 31.1035로 1g 가격을 추정합니다. 추가한 뒤 보유수량에 g 수를 입력하세요.'):
+                try:apply({'holdings':m.add_asset(h,code,m.GOLD_ASSET)},'금 현물 항목을 추가했습니다. 보유수량에 g 수를 입력하세요.')
+                except DataError as e:st.error(str(e))
             with st.expander('종목 검색·추가',expanded=False):
                 asset=picker('settings'+code)
                 with st.form('asset_add'+code):

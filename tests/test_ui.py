@@ -63,4 +63,9 @@ class UITests(unittest.TestCase):
    self.click(at,'목표 비중에 반영')
   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[85.,15.])
 
+ def test_add_gold_row(self):
+  at=self.start();self.click(at,'금 현물(g) 항목 추가')
+  row=at.session_state['holdings'].loc[lambda h:h.ticker.eq('GOLD_G')].iloc[0];self.assertEqual((row.category,row.market),('금','US'))
+  self.assertFalse(any(x.label=='금 현물(g) 항목 추가' for x in at.button))
+
 if __name__=='__main__':unittest.main()
