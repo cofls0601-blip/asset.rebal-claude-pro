@@ -81,7 +81,13 @@ def prepare(data_dir: Path = DATA_DIR, krw: bool = False) -> Market:
         assets["KOSPI"] = ["069500.KS", "EWY_KRW"]
         assets["KTB10"] = "148070.KS"   # KOSEF 국고채10년 (2011-10~)
         assets["KTB3"] = "114260.KS"    # KODEX 국고채3년 (2009-07~)
-        local = (CASH, "KOSPI", "KTB10", "KTB3")
+        # 일반계좌 1 개별 종목·ETF (TIGER 코리아TOP10 상장 전은 KODEX 200으로 이어 붙임)
+        kr = {"SAMSUNG": "005930.KS", "HYNIX": "000660.KS", "HYUNDAI": "005380.KS", "IBK": "024110.KS",
+              "TOP10": ["292150.KS", "069500.KS", "EWY_KRW"]}
+        for name, cols in kr.items():
+            if all(c in close for c in ([cols] if isinstance(cols, str) else cols)):
+                assets[name] = cols
+        local = (CASH, "KOSPI", "KTB10", "KTB3", *kr)
     m = build_market(close, adj, assets, fx=fx, local=local)
     spx_t = _daily_total(close, adj, ["SPY", "VFINX"])
     ndx_t = _daily_total(close, adj, ["QQQ", "^NDX"])
