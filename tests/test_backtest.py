@@ -109,6 +109,18 @@ class MomentumMixTests(unittest.TestCase):
         self.assertAlmostEqual(w[CASH], .6)
 
 
+class TaxTests(unittest.TestCase):
+    def test_korean_equity_is_not_taxed_but_us_etf_is(self):
+        from backtest.optimize import after_tax
+        idx = pd.date_range("2000-01-31", periods=12, freq="ME")
+        base = {"ret": [.01] * 12, "turnover": [1.0] + [0.0] * 11}
+        kr = after_tax(pd.DataFrame({**base, "weights": [{"KOSPI": 1.0}] * 12}, index=idx))
+        us = after_tax(pd.DataFrame({**base, "weights": [{"SPX": 1.0}] * 12}, index=idx))
+        self.assertAlmostEqual((1 + kr).prod(), 1.01 ** 12)
+        gain = 1.01 ** 12 - 1
+        self.assertAlmostEqual((1 + us).prod(), (1 + gain) * (1 - .22 * gain))
+
+
 class PortfolioTests(unittest.TestCase):
     def test_combine_lets_each_account_grow_separately(self):
         from backtest.portfolio import combine
