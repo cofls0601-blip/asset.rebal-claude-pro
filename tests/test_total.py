@@ -40,3 +40,12 @@ class TotalTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class ReconcileTests(unittest.TestCase):
+    def test_per_account_difference(self):
+        v=pd.DataFrame(dict(account=['연금','연금','ISA'],value=[600.,400.,500.]))
+        r=m.reconcile(v,{'연금':1004.,'ISA':450.,'없는 계좌':1.})
+        self.assertEqual(r['계좌'].tolist(),['연금','ISA'])
+        self.assertEqual(r['차이'].tolist(),[-4.,50.]);self.assertEqual(r['판정'].tolist(),['일치','차이 큼'])
+        self.assertTrue(m.reconcile(v,{'연금':0.}).empty)

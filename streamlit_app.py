@@ -137,6 +137,15 @@ if page=='이번달' and view is not None:
             lines.append(f'<div class="asset-line"><span>{escape(r["name"])}<small>{escape(r["ticker"])} · {escape(r["price_date"])}</small></span><span>{value}</span><b>{weight}</b></div>')
         cards.append(f'<article class="strategy-card account-card"><div class="card-top"><h3>{escape(str(sub.account.iloc[0]))}</h3><span>{escape(code)}</span></div><div class="card-amount">{amount}</div><div class="changes">{diffs}</div><details><summary>상세 · {len(sub)}종목</summary><div class="asset-head"><span>종목</span><span>평가액</span><span>비중</span></div>{"".join(lines)}<p class="weight-legend">비중 색: 빨강 목표 초과 · 초록 같음 · 파랑 미달</p></details></article>')
     st.markdown('<div class="strategy-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
+    with st.expander('증권사 총액과 대조하기'):
+        st.caption('증권사 앱의 계좌 총액을 입력하면 앱 평가액과 비교합니다. 입력값은 저장하지 않습니다. 차이가 0.5% 이하면 「일치」입니다.')
+        accounts=view.account.drop_duplicates().tolist();entered={}
+        for i,account in enumerate(accounts):
+            entered[account]=st.number_input(f'{account} 증권사 총액(원)',min_value=0.,step=10000.,format='%.0f',key=f'broker_total{i}')
+        result_table=m.reconcile(view,entered)
+        if not result_table.empty:
+            st.dataframe(result_table,hide_index=True,use_container_width=True,column_config={**{c:st.column_config.NumberColumn(format='localized') for c in ['앱 평가액','증권사 총액','차이']},'차이(%)':st.column_config.NumberColumn(format='%+.2f%%')})
+            if (result_table['판정']=='차이 큼').any():st.warning('차이가 큰 계좌가 있습니다. 설정에서 보유수량과 현금을 확인하세요. 장중이면 가격 시점 차이일 수 있습니다.')
     st.subheader('자산군 분포')
     if complete:
         categories=m.category_distribution(view)

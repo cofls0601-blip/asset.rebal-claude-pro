@@ -271,3 +271,16 @@ def last_record(snapshots,day):
         rev=pd.to_numeric(s.revision,errors='coerce').fillna(1);s=s[rev.eq(rev.max())]
     if s.value.isna().any():return None
     return str(s.date.iloc[0].date()),float(s.value.sum()),s.groupby('strategy').value.sum().to_dict()
+
+
+def reconcile(view,entered,tolerance_pct=.5):
+    """Compare app values per account with totals typed from the brokerage app (not saved)."""
+    app=view.groupby('account',sort=False).value.sum(min_count=1)
+    rows=[]
+    for account,value in app.items():
+        broker=entered.get(account)
+        if not broker:continue
+        diff=value-broker;pct=diff/broker*100
+        rows.append({'계좌':account,'앱 평가액':value,'증권사 총액':broker,'차이':diff,'차이(%)':pct,
+                     '판정':'확인 필요' if pd.isna(value) else '일치' if abs(pct)<=tolerance_pct else '차이 큼'})
+    return pd.DataFrame(rows,columns=['계좌','앱 평가액','증권사 총액','차이','차이(%)','판정'])
