@@ -91,6 +91,24 @@ class StrategyTests(unittest.TestCase):
         self.assertAlmostEqual(w["LEV"], 0.0)
 
 
+class MomentumMixTests(unittest.TestCase):
+    def test_relative_momentum_picks_stronger_or_cash(self):
+        up = list(np.linspace(100, 130, 13))
+        less = list(np.linspace(100, 110, 13))
+        m = market({"KOSPI": up, "SPX": less})
+        self.assertEqual(S.relative_momentum()(None, ctx(m, 12)), {"KOSPI": 1.0})
+        down = list(np.linspace(130, 100, 13))
+        m = market({"KOSPI": down, "SPX": down})
+        self.assertEqual(S.relative_momentum()(None, ctx(m, 12)), {CASH: 1.0})
+
+    def test_mix_halves_stocks_below_sma(self):
+        down = list(np.linspace(150, 100, 13))
+        m = market({"KOSPI": down, "A": down})
+        w = S.mix({"A": 1, "KOSPI": 1}, .8, "KOSPI", .5)(m.close.index[12], ctx(m, 12))
+        self.assertAlmostEqual(w["A"], .2)
+        self.assertAlmostEqual(w[CASH], .6)
+
+
 class PortfolioTests(unittest.TestCase):
     def test_combine_lets_each_account_grow_separately(self):
         from backtest.portfolio import combine

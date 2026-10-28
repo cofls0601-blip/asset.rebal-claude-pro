@@ -220,6 +220,43 @@ def adm(risk=("SPX", "EFA"), bond="TLT"):
     return strat
 
 
+def relative_momentum(cands=("KOSPI", "SPX"), safe=CASH, months=12, score=None):
+    """후보 중 수익률이 가장 높은 하나에 100%. 그것도 현금보다 낮으면 safe 100%.
+
+    score: None이면 months개월 총수익률, "13612w"면 가중 모멘텀.
+    """
+    def strat(d, ctx):
+        m = ctx.m
+        s = m.w13612() if score == "13612w" else m.mom_total(months)
+        best = max(cands, key=lambda a: ctx.val(s, a))
+        ref = 0.0 if score == "13612w" else ctx.val(s, safe)
+        return {best: 1.0} if ctx.val(s, best) > ref else {safe: 1.0}
+    return strat
+
+
+def mix(stocks: dict, stock_share: float, filter_asset=None, keep_below=1.0, months=(12,)):
+    """종목 비율(stocks)을 주식 몫(stock_share)만큼, 나머지는 현금. months에 비율 복원.
+
+    filter_asset이 10개월 SMA 아래면 주식 몫을 keep_below배로 줄인다(바뀌는 달에 매매).
+    """
+    total = sum(stocks.values())
+    norm = {k: v / total for k, v in stocks.items()}
+
+    def strat(d, ctx):
+        below = filter_asset is not None and ctx.val(ctx.m.close, filter_asset) < ctx.val(ctx.m.sma(10), filter_asset)
+        prev = ctx.state.get("below")
+        ctx.state["below"] = below
+        first = not ctx.state.get("started")
+        ctx.state["started"] = True
+        if first or d.month in months or below != prev:
+            s = stock_share * (keep_below if below else 1.0)
+            w = {k: s * v for k, v in norm.items()}
+            w[CASH] = w.get(CASH, 0) + 1 - s
+            return w
+        return None
+    return strat
+
+
 def _score(m, kind):
     if kind == "12m":
         return m.mom(12)
