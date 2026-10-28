@@ -71,3 +71,21 @@ h3{font-size:18px!important;font-weight:600!important}
 .check-headline{font-size:16px!important;font-weight:600;margin:10px 0 4px;overflow-wrap:anywhere}
 .check-card .card-top h3{font-size:20px!important;font-weight:700!important;color:var(--desk-text)!important}
 .check-card .card-top h3 span{font-size:inherit!important;color:inherit!important;padding:0!important;background:none!important}
+
+/* Total-assets first screen (brokerage-app style cards). Korean convention: up red, down blue. */
+.total-card{background:var(--desk-paper);border-radius:20px;padding:24px 26px;margin:18px 0 22px;box-shadow:0 1px 2px rgba(28,46,73,.06)}
+.total-card>span{font-size:15px;color:var(--desk-muted)}
+.total-card strong{display:block;font-size:34px;font-weight:700;letter-spacing:-.02em;margin:6px 0 10px;font-variant-numeric:tabular-nums}
+.total-card>small{display:block;color:var(--desk-muted);font-size:12px;margin-top:10px}
+.changes{display:flex;flex-direction:column;gap:4px}
+.change{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.change small{font-weight:500;color:var(--desk-muted)!important;font-size:12px!important;margin-right:4px}
+.change.up{color:#d6283b}.change.down{color:#245bd0}.change.flat{color:var(--desk-muted)}
+.account-card .card-top h3{font-size:18px}
+.account-card .card-amount{margin:12px 0 8px}
+.account-card details{margin-top:14px;border-top:1px solid var(--desk-border);padding-top:10px}
+.account-card summary{cursor:pointer;font-size:14px;color:var(--desk-muted);list-style-position:inside;padding:4px 0 8px}
+.weight-legend{font-size:12px!important;color:var(--desk-muted);margin:8px 0 0}
+@media(max-width:767px){.total-card{padding:20px}.total-card strong{font-size:28px}.change{font-size:14px}}
+.account-card .card-top h3 span{font-size:inherit!important;color:inherit!important;padding:0!important;background:none!important}.account-card .card-top h3{font-size:19px!important;font-weight:700!important}
+.strategy-grid{align-items:start}

@@ -19,6 +19,15 @@ def weight_html(current, target):
     return f'<span class="weight-{state}" title="{label}">{shown}</span>'
 
 
+def change_html(now,before,label):
+    """Korean convention: rise in red ▲, fall in blue ▼."""
+    if before is None or pd.isna(now) or pd.isna(before) or not before:
+        return f'<span class="change flat"><small>{escape(label)}</small> —</span>'
+    diff=float(now)-float(before);pct=diff/float(before)*100
+    state,mark=('up','▲') if round(diff)>0 else ('down','▼') if round(diff)<0 else ('flat','')
+    return f'<span class="change {state}"><small>{escape(label)}</small> {mark} {abs(diff):,.0f}원 · {pct:+.2f}%</span>'
+
+
 def portfolio_table(view):
     headers=['전략명','티커','종목명','보유 수량','원화/달러','종가','10개월 SMA','평가액','현재 비중','목표 비중','12개월 수익률']
     widths=[5,6,14,8,6,10,10,14,8,8,11]

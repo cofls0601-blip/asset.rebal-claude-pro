@@ -192,22 +192,26 @@ def clean(s,day):
 
 def valuation(h,day,fetch=fetch_prices):
     v=validate_holdings(h).copy();errors=[];cache={}
-    for c in ['close','fx','sma10','return12','value','weight','total_weight']:v[c]=float('nan')
+    for c in ['close','fx','sma10','return12','value','weight','total_weight','prev_close','prev_fx','prev_value']:v[c]=float('nan')
     v['price_date']=''
     def get(t,m):
         if (t,m) not in cache:cache[t,m]=clean(fetch(t,m,day),day)
         return cache[t,m]
     for idx,r in v.iterrows():
         try:
-            if r.ticker=='CASH':close=fx=1.;price_date=str(day)
+            if r.ticker=='CASH':close=fx=prev_close=prev_fx=1.;price_date=str(day)
             else:
                 market=market_of(r.ticker,r.market);s=get(r.ticker,market);close=float(s.iloc[-1]);price_date=str(s.index[-1].date())
-                fx=float(get('KRW=X','US').iloc[-1]) if market=='US' else 1.
+                # Previous trading day of each series, for the 전일 대비 change.
+                prev_close=float(s.iloc[-2]) if len(s)>1 else float('nan')
+                rates=get('KRW=X','US') if market=='US' else None
+                fx=float(rates.iloc[-1]) if market=='US' else 1.
+                prev_fx=(float(rates.iloc[-2]) if len(rates)>1 else float('nan')) if market=='US' else 1.
                 # The chosen 기준일 close stands in for the month-end close of its month (clean() already drops later prices).
                 months=s.resample('ME').last().dropna()
                 if len(months)>=10:v.at[idx,'sma10']=float(months.tail(10).mean())
                 if len(months)>=13:v.at[idx,'return12']=float(months.iloc[-1]/months.iloc[-13]-1)*100
-            v.loc[idx,['close','fx','value','price_date']]=[close,fx,float(r.shares)*close*fx,price_date]
+            v.loc[idx,['close','fx','value','price_date','prev_close','prev_fx','prev_value']]=[close,fx,float(r.shares)*close*fx,price_date,prev_close,prev_fx,float(r.shares)*prev_close*prev_fx]
         except Exception as e:errors.append(f'{r.strategy} · {r.ticker}: {e}')
     for code,ids in v.groupby('strategy').groups.items():
         sub=v.loc[ids,'value']
@@ -230,8 +234,11 @@ def revalue(view,holdings):
     quotes=view.set_index(keys)
     if any(tuple(r) not in quotes.index for r in h[keys].itertuples(index=False,name=None)):
         raise DataError('새 종목의 종가를 먼저 조회하세요')
-    v=h.merge(view[keys+['close','fx','sma10','return12','price_date']],on=keys,how='left',validate='one_to_one')
-    v['value']=v.shares*v.close*v.fx;v['weight']=float('nan');v['total_weight']=float('nan')
+    extra=[c for c in ['prev_close','prev_fx'] if c in view]
+    v=h.merge(view[keys+['close','fx','sma10','return12','price_date']+extra],on=keys,how='left',validate='one_to_one')
+    v['value']=v.shares*v.close*v.fx
+    if extra:v['prev_value']=v.shares*v.prev_close*v.prev_fx
+    v['weight']=float('nan');v['total_weight']=float('nan')
     for _,ids in v.groupby('strategy').groups.items():
         values=v.loc[ids,'value']
         if values.notna().all():v.loc[ids,'weight']=values/values.sum()*100 if values.sum() else 0.
@@ -242,3 +249,16 @@ def revalue(view,holdings):
 def category_distribution(view):
     if view.value.isna().any():raise DataError('모든 종가와 환율을 조회한 뒤 분류별 분포를 확인하세요')
     return view.groupby('category',as_index=False)['value'].sum().loc[lambda x:x.value>0].sort_values('value',ascending=False)
+
+
+def last_record(snapshots,day):
+    """Totals of the latest 기록 before `day`: (date, total, {strategy: value}) or None."""
+    if snapshots.empty or 'value' not in snapshots:return None
+    s=snapshots.copy();s['date']=pd.to_datetime(s.date,errors='coerce');s['value']=pd.to_numeric(s.value,errors='coerce')
+    s=s[s.date.notna()&(s.date<pd.Timestamp(day))]
+    if s.empty:return None
+    s=s[s.date.eq(s.date.max())]
+    if 'revision' in s:
+        rev=pd.to_numeric(s.revision,errors='coerce').fillna(1);s=s[rev.eq(rev.max())]
+    if s.value.isna().any():return None
+    return str(s.date.iloc[0].date()),float(s.value.sum()),s.groupby('strategy').value.sum().to_dict()

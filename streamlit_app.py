@@ -9,7 +9,7 @@ import plotly.express as px
 import streamlit as st
 from streamlit_app import manual as m
 from streamlit_app import rules
-from streamlit_app.tables import portfolio_table, weight_html
+from streamlit_app.tables import change_html, portfolio_table, weight_html
 from streamlit_app.data import DataError, load_default_holdings, load_default_strategies, normalize_strategies, to_csv_bytes, to_tsv
 from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_backup, parse_table
 from streamlit_app.sheets_sync import load_workspace, save_workspace
@@ -110,7 +110,7 @@ with st.sidebar:
 
 st.markdown('<div class="eyebrow">YOUR MONTHLY ALLOCATION</div>',unsafe_allow_html=True)
 st.title(page)
-descriptions={'이번달':'전략별 자산 규모와 현재 비중을 한눈에 확인하세요.','월말 점검':'GSM → LAA → SSO → ISA (→ EM 연 1회) 순서로 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
+descriptions={'이번달':'총자산과 계좌별 자산을 한눈에 확인하세요. 상세를 누르면 종목이 펼쳐집니다.','월말 점검':'GSM → LAA → SSO → ISA (→ EM 연 1회) 순서로 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
 st.caption(descriptions[page]+f' · 기준일 {day}')
 if st.session_state.get('notice'):st.success(st.session_state.pop('notice'))
 result=st.session_state.get('valued');view=result['view'] if result and result['date']==str(day) else None
@@ -120,8 +120,23 @@ if page in ['이번달','월말 점검','리밸런싱','기록']:
         for error in result['errors']:st.warning(error)
 
 if page=='이번달' and view is not None:
-    complete=view.value.notna().all();total=f'{view.value.sum():,.0f}원' if complete else '조회 확인 필요'
-    st.markdown(f'<div class="hero"><span>총 평가액 · 원화 환산</span><strong>{total}</strong><small>{view.strategy.nunique()}개 전략 · {day} 기준</small></div>',unsafe_allow_html=True)
+    complete=view.value.notna().all();record=m.last_record(st.session_state.snapshots,day)
+    prev=view.prev_value.sum() if 'prev_value' in view and view.prev_value.notna().all() else None
+    total=f'{view.value.sum():,.0f}원' if complete else '조회 확인 필요'
+    changes=change_html(view.value.sum() if complete else None,prev,'전일 대비')+change_html(view.value.sum() if complete else None,record[1] if record else None,f'지난 기록({record[0]}) 대비' if record else '지난 기록 대비')
+    st.markdown(f'<section class="total-card"><span>총자산 · 원화 환산</span><strong>{total}</strong><div class="changes">{changes}</div><small>{view.strategy.nunique()}개 전략 · {day} 기준</small></section>',unsafe_allow_html=True)
+    st.caption('전일 대비는 같은 수량으로 직전 거래일 종가와 비교합니다. 지난 기록 대비는 「기록」에서 확정한 평가와 비교하며, 입출금과 매매가 포함됩니다.')
+    cards=[]
+    for code,sub in view.groupby('strategy',sort=False):
+        ok=sub.value.notna().all();amount=f'{sub.value.sum():,.0f}원' if ok else '조회 확인 필요';lines=[]
+        prev_sub=sub.prev_value.sum() if 'prev_value' in sub and sub.prev_value.notna().all() else None
+        before=record[2].get(code) if record else None
+        diffs=change_html(sub.value.sum() if ok else None,prev_sub,'전일')+change_html(sub.value.sum() if ok else None,before,'지난 기록')
+        for r in sub.to_dict('records'):
+            value='—' if pd.isna(r['value']) else f'{r["value"]:,.0f}원';weight='—' if pd.isna(r['weight']) else weight_html(r['weight'],r['target_pct'])
+            lines.append(f'<div class="asset-line"><span>{escape(r["name"])}<small>{escape(r["ticker"])} · {escape(r["price_date"])}</small></span><span>{value}</span><b>{weight}</b></div>')
+        cards.append(f'<article class="strategy-card account-card"><div class="card-top"><h3>{escape(str(sub.account.iloc[0]))}</h3><span>{escape(code)}</span></div><div class="card-amount">{amount}</div><div class="changes">{diffs}</div><details><summary>상세 · {len(sub)}종목</summary><div class="asset-head"><span>종목</span><span>평가액</span><span>비중</span></div>{"".join(lines)}<p class="weight-legend">비중 색: 빨강 목표 초과 · 초록 같음 · 파랑 미달</p></details></article>')
+    st.markdown('<div class="strategy-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
     st.subheader('자산군 분포')
     if complete:
         categories=m.category_distribution(view)
@@ -136,16 +151,6 @@ if page=='이번달' and view is not None:
             with st.container(border=True):
                 st.plotly_chart(chart,use_container_width=True,config={'displayModeBar':False})
     else:st.caption('모든 종가와 환율 조회를 완료하면 분포를 표시합니다.')
-    st.subheader('전략별 자산')
-    st.caption('현재 비중: 🔴 목표 초과 · 🟢 목표와 같음 · 🔵 목표 미달 (소수점 둘째 자리 기준)')
-    cards=[]
-    for code,sub in view.groupby('strategy',sort=False):
-        amount=f'{sub.value.sum():,.0f}원' if sub.value.notna().all() else '조회 확인 필요';lines=[]
-        for r in sub.to_dict('records'):
-            value='—' if pd.isna(r['value']) else f'{r["value"]:,.0f}원';weight='—' if pd.isna(r['weight']) else weight_html(r['weight'],r['target_pct'])
-            lines.append(f'<div class="asset-line"><span>{escape(r["name"])}<small>{escape(r["ticker"])} · {escape(r["price_date"])}</small></span><span>{value}</span><b>{weight}</b></div>')
-        cards.append(f'<article class="strategy-card"><div class="card-top"><h3>{escape(code)}</h3><span>{len(sub)}종목</span></div><small>{escape(str(sub.account.iloc[0]))}</small><div class="card-amount">{amount}</div><div class="asset-head"><span>종목</span><span>평가액</span><span>비중</span></div>{"".join(lines)}</article>')
-    st.markdown('<div class="strategy-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
 
 elif page=='월말 점검' and view is not None:
     st.caption('앱은 제안만 합니다. 「목표 비중에 반영」을 누른 전략만 목표 비중이 바뀌고, 매매는 주문안에서 직접 입력합니다.')

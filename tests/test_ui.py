@@ -47,6 +47,7 @@ class UITests(unittest.TestCase):
   at.sidebar.radio[0].set_value('리밸런싱').run()
   self.assertEqual(list(at.dataframe[0].value.columns),['티커','종목명','현재 비중','목표 비중'])
   at.sidebar.radio[0].set_value('이번달').run();self.assertFalse(at.exception)
+  shown=' '.join(x.value for x in at.markdown);self.assertIn('총자산',shown);self.assertIn('전일 대비',shown);self.assertIn('상세',shown)
 
  def test_monthly_check_proposes_and_applies_only_on_click(self):
   at=self.start()
