@@ -79,7 +79,9 @@ def prepare(data_dir: Path = DATA_DIR, krw: bool = False) -> Market:
         for frame in (close, adj):
             frame.loc[frame.index < "2009-04-01", "069500.KS"] = np.nan
         assets["KOSPI"] = ["069500.KS", "EWY_KRW"]
-        local = (CASH, "KOSPI")
+        assets["KTB10"] = "148070.KS"   # KOSEF 국고채10년 (2011-10~)
+        assets["KTB3"] = "114260.KS"    # KODEX 국고채3년 (2009-07~)
+        local = (CASH, "KOSPI", "KTB10", "KTB3")
     m = build_market(close, adj, assets, fx=fx, local=local)
     spx_t = _daily_total(close, adj, ["SPY", "VFINX"])
     ndx_t = _daily_total(close, adj, ["QQQ", "^NDX"])
