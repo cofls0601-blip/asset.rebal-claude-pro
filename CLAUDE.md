@@ -42,6 +42,7 @@
 ```
 streamlit_app.py          앱 화면(이번달·월말 점검·리밸런싱·주문안·기록·설정)
 streamlit_app/rules.py    월말 점검 판정(LAA·GSM·SSO·ISA)
+streamlit_app/orders.py   목표 비중 → 주식 수 주문(매도 먼저, 현금 안에서 매수), 체결 반영
 streamlit_app/manual.py   전략·종목 관리, 시세 조회, 평가(SMA·12개월 수익률)
 streamlit_app/data.py     표 형식 정의, 기본값, CSV 입출력
 streamlit_app/ledger.py   8개 원장 탭 구조, 백업/복원

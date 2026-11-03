@@ -68,4 +68,24 @@ class UITests(unittest.TestCase):
   row=at.session_state['holdings'].loc[lambda h:h.ticker.eq('GOLD_G')].iloc[0];self.assertEqual((row.category,row.market),('금','US'))
   self.assertFalse(any(x.label=='금 현물(g) 항목 추가' for x in at.button))
 
+ def test_guided_rebalancing_flow(self):
+  at=self.start()
+  h=pd.DataFrame([dict(strategy='SSO',account='일반계좌 2',ticker='SSO',name='ProShares Ultra S&P500',market='US',category='선진국 주식',role='',target_pct=70.,shares=7.),
+                  dict(strategy='SSO',account='일반계좌 2',ticker='CASH',name='현금',market='KR',category='현금',role='현금',target_pct=30.,shares=300.)])
+  at.session_state['holdings']=m.validate_holdings(h)
+  def fetch(t,market,d):
+   if t=='SPY':idx=pd.bdate_range(end=pd.Timestamp(d),periods=260);s=pd.Series(100.,index=idx);s.iloc[-1]=84.;return s
+   return pd.Series([100. if t=='SSO' else 1.],index=[pd.Timestamp(d)])
+  with patch.object(m,'fetch_prices',side_effect=fetch):
+   at.sidebar.radio[0].set_value('월말 리밸런싱').run();self.assertFalse(at.exception)
+   plan=at.dataframe[0].value;self.assertEqual(plan.iloc[0]['구분'],'매수');self.assertEqual(plan.iloc[0]['수량'],1)
+   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[70.,30.])  # nothing changes before the click
+   self.click(at,'할 일 확정 → 체결 단계로')
+   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[85.,15.]);self.assertEqual(at.session_state['rebal_step'],'3 · 체결')
+   next(b for b in at.button if b.label=='체결 반영').click().run();self.assertFalse(at.exception)
+   self.assertEqual(at.session_state['holdings'].shares.tolist(),[8.,200.]);self.assertEqual(len(at.session_state['actions']),1)
+   self.assertFalse(any(b.label=='체결 반영' for b in at.button))
+   at.radio(key='rebal_step').set_value('4 · 마감').run();self.click(at,'이번 달 마감')
+  self.assertEqual(len(at.session_state['snapshots']),2);self.assertEqual(at.session_state['rebal_step'],'2 · 할 일')
+
 if __name__=='__main__':unittest.main()

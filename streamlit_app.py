@@ -9,6 +9,7 @@ import plotly.express as px
 import streamlit as st
 from streamlit_app import manual as m
 from streamlit_app import rules
+from streamlit_app.orders import apply_fill, orders_frame, plan_orders
 from streamlit_app.tables import change_html, portfolio_table, weight_html
 from streamlit_app.data import DataError, load_default_holdings, load_default_strategies, normalize_strategies, to_csv_bytes, to_tsv
 from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_backup, parse_table
@@ -65,6 +66,20 @@ def price_columns(columns):
     return {c:st.column_config.NumberColumn(format='localized') for c in columns
             if c in ['종가','10개월 SMA','close','sma10','actual_price','평가액','value','actual_amount','planned_amount']}
 
+def persist():
+    """Save to Sheets when connected; returns an error message or None."""
+    if not connected or st.session_state.demo:return None
+    try:st.session_state.token=save_workspace(remote['SHEETS_WEBAPP_URL'],remote['SHEETS_SECRET'],ws(),st.session_state.token);st.session_state.dirty=False
+    except DataError as e:return str(e)
+
+def snapshot_table(view,day,memo):
+    if view.value.isna().any():raise DataError('모든 종가·환율 조회를 완료하세요')
+    old=st.session_state.snapshots;same=old.date.astype(str).eq(str(day))
+    revisions=pd.to_numeric(old.get('revision',pd.Series(1,index=old.index)),errors='coerce').fillna(1)
+    revision=int(revisions[same].max())+1 if same.any() else 1
+    new=pd.DataFrame(dict(date=str(day),saved_at=pd.Timestamp.now(tz='UTC').isoformat(),strategy=view.strategy,account=view.account,ticker=view.ticker,name=view.name,category=view.category,close=view.close,shares=view.shares,value=view.value,weight_pct=view.total_weight,target_pct=view.target_pct,strategy_version='manual',memo=memo,revision=revision,fx=view.fx,price_date=view.price_date,account_weight_pct=view.weight))
+    return pd.concat([old,new],ignore_index=True)
+
 def table(frame):
     st.dataframe(frame,hide_index=True,use_container_width=True,column_config=price_columns(frame.columns))
 def picker(key):
@@ -94,7 +109,7 @@ def picker(key):
 
 with st.sidebar:
     st.markdown('<div class="brand">◈ <b>Rebalance</b><small>PERSONAL ALLOCATION DESK</small></div>',unsafe_allow_html=True)
-    page=st.radio('메뉴',['이번달','월말 점검','리밸런싱','주문안','기록','설정'],label_visibility='collapsed')
+    page=st.radio('메뉴',['이번달','월말 리밸런싱','월말 점검','리밸런싱','주문안','기록','설정'],label_visibility='collapsed')
     today=datetime.now(ZoneInfo('Asia/Seoul')).date()
     day=st.date_input('종가 기준일',today,max_value=today)
     if st.button('종가 조회',type='primary',use_container_width=True):
@@ -110,11 +125,16 @@ with st.sidebar:
 
 st.markdown('<div class="eyebrow">YOUR MONTHLY ALLOCATION</div>',unsafe_allow_html=True)
 st.title(page)
-descriptions={'이번달':'총자산과 계좌별 자산을 한눈에 확인하세요. 상세를 누르면 종목이 펼쳐집니다.','월말 점검':'GSM → LAA → SSO → ISA (→ EM 연 1회) 순서로 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
+if page=='월말 리밸런싱':
+    day=st.date_input('1 · 기준일 (리밸런싱하는 날)',today,max_value=today,key='rebal_day',help='고른 날의 종가를 이번 달 월말 종가로 보고 판정합니다.')
+    current=st.session_state.get('valued')
+    if not current or current['date']!=str(day):
+        with st.spinner('종가·환율을 불러옵니다…'):refresh(day)
+descriptions={'월말 리밸런싱':'기준일 → 할 일 확인 → 체결 입력 → 마감, 순서대로 진행하세요.','이번달':'총자산과 계좌별 자산을 한눈에 확인하세요. 상세를 누르면 종목이 펼쳐집니다.','월말 점검':'GSM → LAA → SSO → ISA (→ EM 연 1회) 순서로 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
 st.caption(descriptions[page]+f' · 기준일 {day}')
 if st.session_state.get('notice'):st.success(st.session_state.pop('notice'))
 result=st.session_state.get('valued');view=result['view'] if result and result['date']==str(day) else None
-if page in ['이번달','월말 점검','리밸런싱','기록']:
+if page in ['이번달','월말 리밸런싱','월말 점검','리밸런싱','기록']:
     if view is None:st.info('사이드바의 종가 조회를 눌러 선택한 기준일의 평가를 불러오세요.')
     else:
         for error in result['errors']:st.warning(error)
@@ -160,6 +180,80 @@ if page=='이번달' and view is not None:
             with st.container(border=True):
                 st.plotly_chart(chart,use_container_width=True,config={'displayModeBar':False})
     else:st.caption('모든 종가와 환율 조회를 완료하면 분포를 표시합니다.')
+
+elif page=='월말 리밸런싱' and view is not None:
+    steps=['2 · 할 일','3 · 체결','4 · 마감']
+    if st.session_state.get('goto_step'):st.session_state.rebal_step=st.session_state.pop('goto_step')
+    step=st.radio('단계',steps,horizontal=True,key='rebal_step',label_visibility='collapsed')
+    confirmed=st.session_state.setdefault('rebal_confirmed',[])
+    fractional=dict(zip(st.session_state.strategies.code,st.session_state.strategies.fractional_us)) if 'fractional_us' in st.session_state.strategies else {}
+    if step=='2 · 할 일':
+        st.caption('규칙으로 판정하는 계좌만 나옵니다. 숫자는 지금 종가로 계산한 주식 수이고, 매도한 돈까지 합쳐 살 수 있는 만큼만 매수합니다.')
+        picked={}
+        for d in [d for d in rules.evaluate(view,day,prices,st.session_state.strategies) if d['status']!='판정 없음']:
+            sub=view[view.strategy.eq(d['code'])];orders=[];notes=[]
+            if d['status']=='판정' and d['targets']:orders,notes=plan_orders(sub,d['targets'],bool(fractional.get(d['code'],False)))
+            with st.container(border=True):
+                st.markdown(f'<div class="check-card {"blocked" if d["status"]=="계산 불가" else "judged"}"><div class="card-top"><h3>{escape(str(sub.account.iloc[0]))}</h3><span class="check-badge">{escape(d["code"])}</span></div><p class="check-headline">{escape(d["headline"])}</p></div>',unsafe_allow_html=True)
+                if d['status']=='계산 불가':continue
+                if orders:
+                    st.dataframe(orders_frame(orders),hide_index=True,use_container_width=True,column_config={'예상 금액':st.column_config.NumberColumn(format='localized'),'수량':st.column_config.NumberColumn(format='%g')})
+                    for note in notes:st.warning(note)
+                    picked[d['code']]=(st.checkbox('이 계좌 진행',value=True,key='go'+d['code']),d['targets'])
+                else:st.success('이번 달 할 일 없음')
+                if d['evidence']:
+                    with st.expander('근거 보기'):table(pd.DataFrame(d['evidence']))
+        if picked and st.button('할 일 확정 → 체결 단계로',type='primary',use_container_width=True):
+            try:
+                h=st.session_state.holdings
+                for code,(go,targets) in picked.items():
+                    if go:h=rules.apply_targets(h,code,targets)
+                install({'holdings':m.validate_holdings(h)});refresh(day)
+                st.session_state.rebal_confirmed=[c for c,(go,_) in picked.items() if go]
+                error=persist();st.session_state.goto_step='3 · 체결'
+                st.session_state.notice='목표 비중을 확정했습니다. 증권사 앱에서 주문한 뒤 체결을 입력하세요.'+(f' (Sheets 저장 실패: {error})' if error else '')
+                st.rerun()
+            except DataError as e:st.error(str(e))
+    elif step=='3 · 체결':
+        if not confirmed:st.info('2 · 할 일에서 진행할 계좌를 확정하세요. 앱을 다시 열었다면 확정을 한 번 더 누르면 남은 주문만 나옵니다.')
+        for code in confirmed:
+            sub=view[view.strategy.eq(code)]
+            if sub.empty:continue
+            orders,_=plan_orders(sub,dict(zip(sub.ticker,sub.target_pct)),bool(fractional.get(code,False)))
+            with st.container(border=True):
+                st.markdown(f'<div class="check-card judged"><div class="card-top"><h3>{escape(str(sub.account.iloc[0]))}</h3><span class="check-badge">{escape(code)}</span></div></div>',unsafe_allow_html=True)
+                if not orders:st.success('남은 주문 없음');continue
+                for i,o in enumerate(orders):
+                    with st.form(f'fill{code}{i}{st.session_state.revision}'):
+                        st.markdown(f'**{o["side"]}** {escape(o["name"])} · 예상 {o["amount"]:,.0f}원')
+                        q=st.number_input('체결 수량',min_value=0.,value=float(o['shares']),step=1.,format='%g')
+                        if st.form_submit_button('체결 반영',use_container_width=True):
+                            try:
+                                updated,before,after=apply_fill(st.session_state.holdings,code,o['ticker'],o['side'],q,o['price'])
+                                log=m.action(updated,code,o['ticker'],q,o['side'],day,before,after)
+                                install({'holdings':updated,'actions':pd.concat([st.session_state.actions,pd.DataFrame([log])],ignore_index=True)})
+                                st.session_state.valued={'date':str(day),'view':m.revalue(view,updated),'errors':result['errors']}
+                                error=persist()
+                                st.session_state.notice=f'{o["name"]} {o["side"]} {q:g}주 반영 · {before:g} → {after:g}. 현금은 예상 금액으로 조정했습니다.'+(f' (Sheets 저장 실패: {error})' if error else '')
+                                st.rerun()
+                            except DataError as e:st.error(str(e))
+        st.caption('현금은 예상 금액으로 조정됩니다. 실제 예수금과 다르면 4 · 마감의 대조에서 확인하고 설정에서 고치세요.')
+    else:
+        st.caption('증권사 앱의 계좌 총액을 넣어 대조한 뒤 「이번 달 마감」을 누르면 평가가 기록되고 Sheets에 저장됩니다.')
+        entered={}
+        for i,account in enumerate(view.account.drop_duplicates().tolist()):
+            entered[account]=st.number_input(f'{account} 증권사 총액(원)',min_value=0.,step=10000.,format='%.0f',key=f'close_total{i}')
+        checked=m.reconcile(view,entered)
+        if not checked.empty:
+            st.dataframe(checked,hide_index=True,use_container_width=True,column_config={**{c:st.column_config.NumberColumn(format='localized') for c in ['앱 평가액','증권사 총액','차이']},'차이(%)':st.column_config.NumberColumn(format='%+.2f%%')})
+        memo=st.text_input('메모 (선택)',key='close_memo')
+        if st.button('이번 달 마감',type='primary',use_container_width=True):
+            try:
+                install({'snapshots':snapshot_table(view,day,memo)});refresh(day)
+                error=persist();st.session_state.rebal_confirmed=[];st.session_state.goto_step='2 · 할 일'
+                st.session_state.notice='이번 달을 마감했습니다. 평가를 기록했'+('지만 Sheets 저장에 실패했습니다: '+error if error else ('고 Sheets에 저장했습니다.' if connected and not st.session_state.demo else '습니다. (Sheets 미연결 · 전체 백업을 내려받으세요)'))
+                st.rerun()
+            except DataError as e:st.error(str(e))
 
 elif page=='월말 점검' and view is not None:
     st.caption('앱은 제안만 합니다. 「목표 비중에 반영」을 누른 전략만 목표 비중이 바뀌고, 매매는 주문안에서 직접 입력합니다.')
@@ -245,12 +339,7 @@ elif page=='기록':
     memo=st.text_input('평가 메모')
     if st.button('평가 기록 확정',disabled=view is None):
         try:
-            if view.value.isna().any():raise DataError('모든 종가·환율 조회를 완료하세요')
-            old=st.session_state.snapshots;same=old.date.astype(str).eq(str(day))
-            revisions=pd.to_numeric(old.get('revision',pd.Series(1,index=old.index)),errors='coerce').fillna(1)
-            revision=int(revisions[same].max())+1 if same.any() else 1
-            new=pd.DataFrame(dict(date=str(day),saved_at=pd.Timestamp.now(tz='UTC').isoformat(),strategy=view.strategy,account=view.account,ticker=view.ticker,name=view.name,category=view.category,close=view.close,shares=view.shares,value=view.value,weight_pct=view.total_weight,target_pct=view.target_pct,strategy_version='manual',memo=memo,revision=revision,fx=view.fx,price_date=view.price_date,account_weight_pct=view.weight))
-            apply({'snapshots':pd.concat([old,new],ignore_index=True)},'평가를 기록했습니다. Sheets에 저장하세요.')
+            apply({'snapshots':snapshot_table(view,day,memo)},'평가를 기록했습니다. Sheets에 저장하세요.')
         except DataError as e:st.error(str(e))
     selected=st.selectbox('내보낼 시트',TABLES);table(st.session_state[selected]);st.code(to_tsv(st.session_state[selected]),language=None)
     st.download_button('CSV 다운로드',to_csv_bytes(st.session_state[selected]),selected+'.csv','text/csv')
