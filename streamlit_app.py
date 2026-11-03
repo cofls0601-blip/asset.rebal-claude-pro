@@ -224,20 +224,27 @@ elif page=='월말 리밸런싱' and view is not None:
                 st.markdown(f'<div class="check-card judged"><div class="card-top"><h3>{escape(str(sub.account.iloc[0]))}</h3><span class="check-badge">{escape(code)}</span></div></div>',unsafe_allow_html=True)
                 if not orders:st.success('남은 주문 없음');continue
                 for i,o in enumerate(orders):
-                    with st.form(f'fill{code}{i}{st.session_state.revision}'):
-                        st.markdown(f'**{o["side"]}** {escape(o["name"])} · 예상 {o["amount"]:,.0f}원')
-                        q=st.number_input('체결 수량',min_value=0.,value=float(o['shares']),step=1.,format='%g')
-                        if st.form_submit_button('체결 반영',use_container_width=True):
+                    # Compact order ticket like a brokerage app: price and quantity steppers, then the amount.
+                    key=f'{code}{i}{st.session_state.revision}';usd=o['fx']!=1  # priced in dollars (valuation decides the market from the ticker)
+                    with st.container(key='ticket'+key):
+                        side_class='buy' if o['side']=='매수' else 'sell'
+                        st.markdown(f'<div class="ticket-head"><span class="ticket-side {side_class}">{o["side"]}</span><b>{escape(o["name"])}</b></div>',unsafe_allow_html=True)
+                        unit='달러' if usd else '원'
+                        px_in=st.number_input(f'체결가 ({unit})',min_value=0.,value=float(o['close']),step=.01 if usd else 5.,format='%.2f' if usd else '%.0f',key='px'+key)
+                        q=st.number_input('수량 (주)',min_value=0.,value=float(o['shares']),step=1.,format='%g',key='qty'+key)
+                        amount=q*px_in*o['fx']
+                        st.markdown(f'<div class="ticket-amount"><span>주문금액</span><b>{amount:,.0f}원</b></div>',unsafe_allow_html=True)
+                        if st.button('체결 반영',key='fill'+key,use_container_width=True):
                             try:
-                                updated,before,after=apply_fill(st.session_state.holdings,code,o['ticker'],o['side'],q,o['price'])
+                                updated,before,after=apply_fill(st.session_state.holdings,code,o['ticker'],o['side'],q,px_in*o['fx'])
                                 log=m.action(updated,code,o['ticker'],q,o['side'],day,before,after)
                                 install({'holdings':updated,'actions':pd.concat([st.session_state.actions,pd.DataFrame([log])],ignore_index=True)})
                                 st.session_state.valued={'date':str(day),'view':m.revalue(view,updated),'errors':result['errors']}
                                 error=persist()
-                                st.session_state.notice=f'{o["name"]} {o["side"]} {q:g}주 반영 · {before:g} → {after:g}. 현금은 예상 금액으로 조정했습니다.'+(f' (Sheets 저장 실패: {error})' if error else '')
+                                st.session_state.notice=f'{o["name"]} {o["side"]} {q:g}주 반영 · {before:g} → {after:g}. 현금은 체결가 × 수량만큼 조정했습니다.'+(f' (Sheets 저장 실패: {error})' if error else '')
                                 st.rerun()
                             except DataError as e:st.error(str(e))
-        st.caption('현금은 예상 금액으로 조정됩니다. 실제 예수금과 다르면 4 · 마감의 대조에서 확인하고 설정에서 고치세요.')
+        st.caption('현금은 체결가 × 수량만큼 조정됩니다(수수료 제외). 실제 예수금과 다르면 4 · 마감의 대조에서 확인하세요.')
     else:
         st.caption('증권사 앱의 계좌 총액을 넣어 대조한 뒤 「이번 달 마감」을 누르면 평가가 기록되고 Sheets에 저장됩니다.')
         entered={}

@@ -20,12 +20,12 @@ def plan_orders(sub,targets,fractional_us=False):
         want=total*targets.get(t,0.)/100;price=float(r.close)*float(r.fx)
         if want<float(r.value)-price/2:
             q=float(r.shares) if targets.get(t,0.)<=0 else floor((float(r.value)-want)/price,r)
-            if q>0:orders.append(dict(ticker=t,name=r.name,side='매도',shares=q,price=price,amount=q*price,cut=0.))
+            if q>0:orders.append(dict(ticker=t,name=r.name,side='매도',shares=q,price=price,close=float(r.close),fx=float(r.fx),market=r.market,amount=q*price,cut=0.))
     budget=cash+sum(o['amount'] for o in orders)
     buys=[]
     for t,r in rows.items():
         price=float(r.close)*float(r.fx);q=floor((total*targets.get(t,0.)/100-float(r.value))/price,r)
-        if q>0:buys.append(dict(ticker=t,name=r.name,side='매수',shares=q,price=price,amount=q*price,cut=0.))
+        if q>0:buys.append(dict(ticker=t,name=r.name,side='매수',shares=q,price=price,close=float(r.close),fx=float(r.fx),market=r.market,amount=q*price,cut=0.))
     # Largest purchase is trimmed first so smaller positions still get bought.
     for o in sorted(buys,key=lambda o:-o['amount']):
         need=sum(b['amount'] for b in buys)-budget
