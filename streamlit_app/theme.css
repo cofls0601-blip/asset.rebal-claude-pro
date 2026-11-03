@@ -99,3 +99,12 @@ h3{font-size:18px!important;font-weight:600!important}
 .ticket-row{font-size:12px;color:var(--desk-muted)}
 .ticket-amount{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--desk-border);padding-top:8px;font-size:14px;color:var(--desk-muted)}.ticket-amount b{font-size:17px;color:var(--desk-text);font-variant-numeric:tabular-nums}
 [class*="st-key-ticket"] [data-testid="stWidgetLabel"] p{font-size:12px!important;color:var(--desk-muted)}[class*="st-key-ticket"] [data-testid="stNumberInput"]{margin-top:-4px}
+
+/* Top menu as pills (visible on phones without the sidebar). */
+.st-key-page [role="radiogroup"]{gap:6px 6px!important;flex-wrap:wrap}
+.st-key-page [role="radiogroup"] label{background:var(--desk-paper);border:1px solid var(--desk-border);border-radius:999px;padding:6px 12px!important;margin:0!important}
+.st-key-page [data-selected="true"]{background:var(--desk-accent)!important;border-color:var(--desk-accent)!important}
+.st-key-page [data-selected="true"] p{color:#fff!important;font-weight:600}
+.st-key-page [data-testid="stRadioOption"] div:has(+ [data-testid="stMarkdownContainer"]){display:none}
+@media(max-width:767px){.block-container{padding-top:3.6rem!important}}
+.st-key-page [role="radiogroup"] p{font-size:14px!important}

@@ -16,6 +16,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
+APP_VERSION='2026-11-03 · 월말 리밸런싱'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -109,7 +110,6 @@ def picker(key):
 
 with st.sidebar:
     st.markdown('<div class="brand">◈ <b>Rebalance</b><small>PERSONAL ALLOCATION DESK</small></div>',unsafe_allow_html=True)
-    page=st.radio('메뉴',['이번달','월말 리밸런싱','월말 점검','리밸런싱','주문안','기록','설정'],label_visibility='collapsed')
     today=datetime.now(ZoneInfo('Asia/Seoul')).date()
     day=st.date_input('종가 기준일',today,max_value=today)
     if st.button('종가 조회',type='primary',use_container_width=True):
@@ -123,19 +123,22 @@ with st.sidebar:
         except DataError as e:st.error(str(e))
     st.download_button('전체 백업 다운로드',backup_bytes(ws()),'rebalance-backup.json','application/json',use_container_width=True)
 
+# Menu sits at the top so it is visible on phones without opening the sidebar.
+page=st.radio('메뉴',['이번달','월말 리밸런싱','월말 점검','리밸런싱','주문안','기록','설정'],horizontal=True,key='page',label_visibility='collapsed')
 st.markdown('<div class="eyebrow">YOUR MONTHLY ALLOCATION</div>',unsafe_allow_html=True)
 st.title(page)
 if page=='월말 리밸런싱':
     day=st.date_input('1 · 기준일 (리밸런싱하는 날)',today,max_value=today,key='rebal_day',help='고른 날의 종가를 이번 달 월말 종가로 보고 판정합니다.')
-    current=st.session_state.get('valued')
-    if not current or current['date']!=str(day):
-        with st.spinner('종가·환율을 불러옵니다…'):refresh(day)
+# Prices load by themselves (no button) once real holdings are in; the DEMO workspace waits for the button.
+current=st.session_state.get('valued')
+if page!='설정' and (page=='월말 리밸런싱' or not st.session_state.demo) and (not current or current['date']!=str(day)):
+    with st.spinner('종가·환율을 불러옵니다…'):refresh(day)
 descriptions={'월말 리밸런싱':'기준일 → 할 일 확인 → 체결 입력 → 마감, 순서대로 진행하세요.','이번달':'총자산과 계좌별 자산을 한눈에 확인하세요. 상세를 누르면 종목이 펼쳐집니다.','월말 점검':'GSM → LAA → SSO → ISA (→ EM 연 1회) 순서로 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
 st.caption(descriptions[page]+f' · 기준일 {day}')
 if st.session_state.get('notice'):st.success(st.session_state.pop('notice'))
 result=st.session_state.get('valued');view=result['view'] if result and result['date']==str(day) else None
 if page in ['이번달','월말 리밸런싱','월말 점검','리밸런싱','기록']:
-    if view is None:st.info('사이드바의 종가 조회를 눌러 선택한 기준일의 평가를 불러오세요.')
+    if view is None:st.info('예시(DEMO) 화면입니다. 사이드바(») 「종가 조회」로 가격을 불러오거나, 설정에서 실제 전략과 자산을 입력하세요.')
     else:
         for error in result['errors']:st.warning(error)
 
@@ -444,3 +447,5 @@ elif page=='설정':
         if backup and st.button('백업 복원'):
             try:st.session_state.demo=False;apply(restore_backup(backup.getvalue()),'백업을 복원했습니다.')
             except DataError as e:st.error(str(e))
+
+st.caption(f'앱 버전 {APP_VERSION}')

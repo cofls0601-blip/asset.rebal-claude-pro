@@ -10,7 +10,7 @@ from streamlit_app import manual as m
 
 class UITests(unittest.TestCase):
  def start(self):
-  at=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'streamlit_app.py')).run();at.sidebar.radio[0].set_value('설정').run();return at
+  at=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'streamlit_app.py')).run();at.radio(key='page').set_value('설정').run();return at
  def text(self,at,label,value):next(x for x in at.text_input if x.label==label).set_value(value)
  def click(self,at,label):next(x for x in at.button if x.label==label).click().run();self.assertFalse(at.exception)
  def test_strategy_add_rename_delete(self):
@@ -37,16 +37,16 @@ class UITests(unittest.TestCase):
   day=at.sidebar.date_input[0].value;v,e=m.valuation(h,day,lambda t,m,d:pd.Series([100.],index=[pd.Timestamp(d)]))
   at.session_state['valued']={'date':str(day),'view':v,'errors':e}
   for page in ['이번달','리밸런싱','주문안','기록']:
-   at.sidebar.radio[0].set_value(page).run();self.assertFalse(at.exception)
-  at.sidebar.radio[0].set_value('주문안').run();at.number_input[0].set_value(2);self.click(at,'매수');self.assertEqual(at.session_state['holdings'].shares.iloc[0],12)
+   at.radio(key='page').set_value(page).run();self.assertFalse(at.exception)
+  at.radio(key='page').set_value('주문안').run();at.number_input[0].set_value(2);self.click(at,'매수');self.assertEqual(at.session_state['holdings'].shares.iloc[0],12)
   self.assertEqual(len(at.session_state['actions']),1)
   updated=at.session_state['valued']['view']
   self.assertEqual(updated.value.iloc[0],1200)
   self.assertAlmostEqual(updated.weight.iloc[0],1200/2200*100)
   self.assertEqual(updated.close.iloc[0],100)
-  at.sidebar.radio[0].set_value('리밸런싱').run()
+  at.radio(key='page').set_value('리밸런싱').run()
   self.assertEqual(list(at.dataframe[0].value.columns),['티커','종목명','현재 비중','목표 비중'])
-  at.sidebar.radio[0].set_value('이번달').run();self.assertFalse(at.exception)
+  at.radio(key='page').set_value('이번달').run();self.assertFalse(at.exception)
   shown=' '.join(x.value for x in at.markdown);self.assertIn('총자산',shown);self.assertIn('전일 대비',shown);self.assertIn('상세',shown)
 
  def test_monthly_check_proposes_and_applies_only_on_click(self):
@@ -58,7 +58,7 @@ class UITests(unittest.TestCase):
   fetch=lambda t,market,d:spy if t=='SPY' else pd.Series([100. if t=='SSO' else 1.],index=[pd.Timestamp(d)])
   v,e=m.valuation(at.session_state['holdings'],day,fetch);at.session_state['valued']={'date':str(day),'view':v,'errors':e}
   with patch.object(m,'fetch_prices',side_effect=fetch):
-   at.sidebar.radio[0].set_value('월말 점검').run();self.assertFalse(at.exception)
+   at.radio(key='page').set_value('월말 점검').run();self.assertFalse(at.exception)
    self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[70.,30.])
    self.click(at,'목표 비중에 반영')
   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[85.,15.])
@@ -77,7 +77,7 @@ class UITests(unittest.TestCase):
    if t=='SPY':idx=pd.bdate_range(end=pd.Timestamp(d),periods=260);s=pd.Series(100.,index=idx);s.iloc[-1]=84.;return s
    return pd.Series([100. if t=='SSO' else 1.],index=[pd.Timestamp(d)])
   with patch.object(m,'fetch_prices',side_effect=fetch):
-   at.sidebar.radio[0].set_value('월말 리밸런싱').run();self.assertFalse(at.exception)
+   at.radio(key='page').set_value('월말 리밸런싱').run();self.assertFalse(at.exception)
    plan=at.dataframe[0].value;self.assertEqual(plan.iloc[0]['구분'],'매수');self.assertEqual(plan.iloc[0]['수량'],1)
    self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[70.,30.])  # nothing changes before the click
    self.click(at,'할 일 확정 → 체결 단계로')
