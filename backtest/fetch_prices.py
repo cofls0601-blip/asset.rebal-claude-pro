@@ -55,6 +55,40 @@ KR_TICKERS = [
     "000660.KS",  # SK하이닉스
     "005380.KS",  # 현대차
     "024110.KS",  # 기업은행
+    # 국내 ETF 호환 후보 (2026-11-09, 이름은 tickers.csv로 확인)
+    "195970.KS",  # ARIRANG 선진국MSCI(합성 H)
+    "195980.KS",  # ARIRANG 신흥국MSCI(합성 H)
+    "446720.KS",  # SOL 미국배당다우존스
+    "458730.KS",  # TIGER 미국배당다우존스
+    "329750.KS",  # TIGER 미국달러단기채권액티브
+    "453850.KS",  # ACE 미국30년국채액티브(H)
+    "476760.KS",  # ACE 미국30년국채액티브
+    "458250.KS",  # TIGER 미국30년국채스트립액티브(합성 H)
+    "280930.KS",  # KODEX 미국러셀2000(H)
+    "409820.KS",  # KODEX 미국나스닥100레버리지(합성 H)
+    "225040.KS",  # TIGER 미국S&P500레버리지(합성 H)
+    "130680.KS",  # TIGER 원유선물Enhanced(H)
+    "261220.KS",  # KODEX WTI원유선물(H)
+    "271060.KS",  # KODEX 3대농산물선물(H)
+    "137610.KS",  # TIGER 농산물선물Enhanced(H)
+    "139310.KS",  # TIGER 금속선물(H)
+    "319640.KS",  # TIGER 골드선물(H)
+    "453870.KS",  # TIGER 미국S&P500동일가중? (확인용)
+    "381170.KS",  # TIGER 미국테크TOP10 (확인용)
+    "272580.KS",  # TIGER 단기채권액티브
+    "455030.KS",  # KODEX 미국달러SOFR금리액티브(합성)
+    "189400.KS",  # ARIRANG 글로벌MSCI(합성 H)
+    "283580.KS",  # KODEX 차이나CSI300 (확인용)
+    "238720.KS",  # KINDEX 일본Nikkei225(H) (확인용)
+    "182480.KS",  # TIGER 미국MSCI리츠(합성 H)
+    "352560.KS",  # KODEX 미국S&P500선물(H)? (확인용)
+    "219480.KS",  # KODEX 미국S&P500선물(H)
+    "304940.KS",  # KODEX 미국나스닥100선물(H)
+    "448290.KS",  # TIGER 미국S&P500(H)
+    "448300.KS",  # TIGER 미국나스닥100(H)
+    "472160.KS",  # TIGER 미국테크TOP10 INDXX(H)? (확인용)
+    "411420.KS",  # KODEX 미국나스닥100TR? (확인용)
+    "429000.KS",  # TIGER 미국S&P500배당귀족 (확인용)
 ]
 
 
