@@ -46,7 +46,7 @@ def gsm(cands=("NDX", "SPX", "WORLD", "EURO"), invest=0.8, safe=CASH, mom="12m",
 LAA_TARGET = {"NDX": .125, "EURO": .125, "SPX": .125, "WORLD": .125, "GOLD": .25, "UST10": .25}
 
 
-def laa_variant(target=None, filters=("NDX", "EURO"), restore=QUARTER_MONTHS, safe=CASH, rebuy=False):
+def laa_variant(target=None, filters=("NDX", "EURO"), restore=QUARTER_MONTHS, safe=CASH, rebuy=False, sma_n=10):
     """사용자 변형 LAA. 필터 종목이 SMA 아래면 그 비중을 현금으로. 복원은 restore 달에만.
 
     rebuy=True면 분기 사이라도 필터가 다시 SMA 위로 오면 바로 되산다(개선안 비교용).
@@ -55,7 +55,7 @@ def laa_variant(target=None, filters=("NDX", "EURO"), restore=QUARTER_MONTHS, sa
 
     def strat(d, ctx: Context):
         m = ctx.m
-        sma = m.sma(10)
+        sma = m.sma(sma_n)
         below = {f for f in filters if ctx.val(m.close, f) < ctx.val(sma, f)}
         first = not ctx.state.get("started")
         ctx.state["started"] = True
@@ -210,11 +210,11 @@ def laa_original(timing="SPX"):
     return strat
 
 
-def adm(risk=("SPX", "EFA"), bond="TLT"):
+def adm(risk=("SPX", "EFA"), bond="TLT", windows=(1, 3, 6)):
     """가속 듀얼 모멘텀: 1·3·6개월 수익률 합이 큰 쪽, 둘 다 음수면 장기채."""
     def strat(d, ctx):
         m = ctx.m
-        s = m.mom_total(1) + m.mom_total(3) + m.mom_total(6)
+        s = sum(m.mom_total(k) for k in windows)
         best = max(risk, key=lambda a: ctx.val(s, a))
         return {best: 1.0} if ctx.val(s, best) > 0 else {bond: 1.0}
     return strat
