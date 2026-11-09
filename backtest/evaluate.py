@@ -222,6 +222,20 @@ def lin(x, best, worst, pts):
     return pts * min(1.0, max(0.0, t))
 
 
+# 분야 배점(만점). 기본은 평가 기준 문서의 배점. 사용자가 바꾼 배점은 PROFILES에 이름을 붙여 둔다.
+BASE_PTS = {"A": 35, "B": 25, "C": 15, "D": 15, "E": 10}
+PROFILES = {
+    "기본": BASE_PTS,
+    "수익우선": {"A": 10, "B": 30, "C": 40, "D": 10, "E": 10},  # 사용자 요청 2026-11-09
+}
+SCALE = {k: 1.0 for k in BASE_PTS}
+
+
+def set_profile(name: str) -> None:
+    for k, v in PROFILES[name].items():
+        SCALE[k] = v / BASE_PTS[k]
+
+
 ACC = ["PEN_FREE", "PEN_TAX", "ISA", "GEN1", "GEN2"]
 GRP = {"PEN_FREE": "pen", "PEN_TAX": "pen", "ISA": "isa", "GEN1": "gen", "GEN2": "gen"}
 
@@ -308,9 +322,13 @@ def score(series, combo, w, dom_info, approx_assets, variants=None):
         spread = max(abs(x - cg[0]) for x in cs)
         res["D1"] = 0.0 if not ok else lin(spread, .01, .02, 8)
         res["설정 변화폭"] = spread
-    res["점수(D1 제외)"] = a1 + a2 + a3 + b1 + b2 + b3 + c + d2 + e1 + e2 + e3
+    res["점수(D1 제외)"] = (SCALE["A"] * (a1 + a2 + a3) + SCALE["B"] * (b1 + b2 + b3) + SCALE["C"] * c
+                          + SCALE["D"] * d2 + SCALE["E"] * (e1 + e2 + e3))
+    res["A"], res["B"], res["C"] = SCALE["A"] * (a1 + a2 + a3), SCALE["B"] * (b1 + b2 + b3), SCALE["C"] * c
+    res["E"] = SCALE["E"] * (e1 + e2 + e3)
     if "D1" in res:
-        res["총점"] = res["점수(D1 제외)"] + res["D1"]
+        res["총점"] = res["점수(D1 제외)"] + SCALE["D"] * res["D1"]
+        res["D"] = SCALE["D"] * (res["D1"] + d2)
     return res
 
 
@@ -395,7 +413,8 @@ def prefilter(series, names, w, approx_assets, dom_info) -> pd.DataFrame:
             amb = sum(1 for g, n in zip(grp, combo) if g != "gen" and any(x in approx_assets for x in {**P, **ISA_ONLY}[n][1]))
             new = len({n for g, n in zip(grp, combo) if not app_ok(g, n)})
             e3 = max(0.0, 3 - amb - .5 * new)
-            rows.append((*combo, a1 + a2 + b1 + b2 + b3 + c + d2_of(combo, w, dom_info) + e1 + e2 + e3))
+            rows.append((*combo, SCALE["A"] * (a1 + a2) + SCALE["B"] * (b1 + b2 + b3) + SCALE["C"] * c
+                         + SCALE["D"] * d2_of(combo, w, dom_info) + SCALE["E"] * (e1 + e2 + e3)))
     total = len(names["pen"]) ** 2 * len(names["isa"]) * len(pairs)
     df = pd.DataFrame(rows, columns=ACC + ["예비 점수"])
     df.attrs["total"] = total
@@ -406,6 +425,8 @@ NAMED = {
     "F1 (2027 확정)": ("GSM 상위2+금·채권", "LAA 변형", "나스닥2배 SMA 추세", "국내 주식 보유", "S&P500 보유"),
     "2026 조합": ("GSM 1위(2026)", "LAA 변형", "나스닥2배 단계(2026)", "국내 주식 보유", "SSO 단계(2026)"),
     "b (연금 GSM 둘+듀얼)": ("GSM 상위2 현금없음", "GSM 상위2 현금없음", "나스닥2배 SMA 추세", "국내·미국 듀얼", "S&P500 보유"),
+    "b + 과세 LAA": ("GSM 상위2 현금없음", "LAA 변형", "나스닥2배 SMA 추세", "국내·미국 듀얼", "S&P500 보유"),
+    "기본 배점 1위": ("올웨더(간이)", "DAA", "S&P2배 SMA 추세", "S&P500 보유", "국내 주식 절반 필터"),
     "P9": ("DGA", "DAA", "나스닥2배 SMA 추세", "국내 주식 보유", "황금나비"),
     "P7": ("DGA", "가속듀얼모멘텀", "나스닥2배 SMA 추세", "국내 주식 보유", "황금나비"),
     "P10": ("DAA", "가속듀얼모멘텀", "나스닥2배 SMA 추세", "국내 주식 보유", "황금나비"),
@@ -413,7 +434,11 @@ NAMED = {
 }
 
 
-def main(path: str, top: int = 25) -> None:
+def main(path: str, profile: str = "기본", top: int = 25) -> None:
+    set_profile(profile)
+    top = int(top)
+    a3max, d1max = 10 * SCALE["A"], 8 * SCALE["D"]
+    print(f"배점: {PROFILES[profile]}")
     acc = json.loads(open(path, encoding="utf-8").read())
     tot = sum(acc.values())
     w = {k: v / tot for k, v in acc.items()}
@@ -476,10 +501,10 @@ def main(path: str, top: int = 25) -> None:
         total(c)
     best = max(totals.values())
     # 2차: A3(최대 10)·D1(최대 8)을 다 받아도 best에 못 미치는 조합은 제외하고 나머지를 모두 정밀 계산
-    cand = pre[pre["예비 점수"] + 18 >= best]
+    cand = pre[pre["예비 점수"] + a3max + d1max >= best]
     for c in cand[ACC].itertuples(index=False):
         nd(tuple(c))
-    for c in [c for c in full if full[c]["점수(D1 제외)"] + 8 >= best]:
+    for c in [c for c in full if full[c]["점수(D1 제외)"] + d1max >= best]:
         total(c)
     best = max(totals.values())
     print(f"정밀 계산 {len(full):,}개, D1까지 계산 {len(totals):,}개. 남은 조합은 A3·D1 만점을 받아도 1위({best:.1f})보다 낮다.")
@@ -501,13 +526,13 @@ def main(path: str, top: int = 25) -> None:
             label += " (G1·G2 탈락)"
         final.append({"이름": label, **dict(zip(ACC, c)), **s})
     out = pd.DataFrame(final).sort_values("총점", ascending=False)
-    out.to_pickle(path + ".eval.pkl")
-    show = ["이름", *ACC, "총점", "관문", "A1", "A2", "A3", "B1", "B2", "B3", "C", "D1", "D2", "E1", "E2", "E3",
+    out.to_pickle(path + f".eval.{profile}.pkl")
+    show = ["이름", *ACC, "총점", "관문", "A", "B", "C", "D", "E",
             "원화 연수익", "원화 MDD", "최악12개월", "달러 MDD", "견고수익", "평균 상관", "동반 손실", "회전율", "설정 변화폭"]
     t = out[show].copy()
     for c in ["원화 연수익", "원화 MDD", "최악12개월", "달러 MDD", "견고수익", "동반 손실", "회전율", "설정 변화폭"]:
         t[c] = t[c].map(lambda x: f"{x * 100:.1f}%")
-    for c in ["총점", "A1", "A2", "A3", "B1", "B2", "B3", "C", "D1", "D2", "E1", "E2", "E3", "평균 상관"]:
+    for c in ["총점", "A", "B", "C", "D", "E", "평균 상관"]:
         t[c] = t[c].map(lambda x: f"{x:.1f}" if c != "평균 상관" else f"{x:.2f}")
     print("\n## 최종 점수 (관문 통과 상위 + 지금까지 나온 후보)\n")
     print(t.rename(columns={"PEN_FREE": "연금(비과세)", "PEN_TAX": "연금(과세)", "GEN1": "일반1", "GEN2": "일반2"})
