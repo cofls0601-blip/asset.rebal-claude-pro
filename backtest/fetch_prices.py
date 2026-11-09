@@ -102,7 +102,7 @@ def fetch(ticker: str) -> pd.DataFrame | None:
         print(f"[없음] {ticker}")
         return None
     df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
-    return df[["Close", "Adj Close"]]
+    return df[["Close", "Adj Close", "Volume"]]
 
 
 def name_of(ticker: str) -> str:
@@ -115,7 +115,7 @@ def name_of(ticker: str) -> str:
 
 def main() -> int:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    closes, adjs, rows = {}, {}, []
+    closes, adjs, vols, rows = {}, {}, {}, []
     for t in US_TICKERS + KR_TICKERS:
         df = fetch(t)
         if df is None:
@@ -123,6 +123,8 @@ def main() -> int:
             continue
         closes[t] = df["Close"]
         adjs[t] = df["Adj Close"]
+        if t.endswith(".KS"):
+            vols[t] = df["Volume"]
         rows.append({
             "ticker": t, "name": name_of(t),
             "first": df.index.min().date(), "last": df.index.max().date(), "rows": len(df),
@@ -130,6 +132,8 @@ def main() -> int:
         print(f"[완료] {t}: {df.index.min().date()} ~ {df.index.max().date()} ({len(df)}행)")
     pd.DataFrame(closes).sort_index().round(6).to_csv(DATA_DIR / "close_daily.csv.gz")
     pd.DataFrame(adjs).sort_index().round(6).to_csv(DATA_DIR / "adjclose_daily.csv.gz")
+    # 국내 ETF 거래량(주). 유동성 확인용
+    pd.DataFrame(vols).sort_index().to_csv(DATA_DIR / "volume_daily_kr.csv.gz")
     pd.DataFrame(rows).to_csv(DATA_DIR / "tickers.csv", index=False)
     return 0 if closes else 1
 
