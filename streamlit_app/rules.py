@@ -72,16 +72,17 @@ def check_gsm(sub,day,fetch,params=None):
     evidence=[{'종목':r.name,'종가':round(r.close,2),'10개월 SMA':round(r.sma10,2),'12개월(%)':round(r.return12,2),'판정':'SMA 위' if r.close>r.sma10 else 'SMA 아래'} for r in rows.itertuples()]
     passed=rows[rows.close>rows.sma10]
     targets={t:0. for t in current}
+    cash_name='현금' if cash=='CASH' else str(sub.loc[sub.ticker.eq(cash),'name'].iloc[0])
     if passed.empty:
         targets[cash]=100.
-        return decision('GSM','판정','모든 후보가 10개월 SMA 아래 → 현금 100%',evidence,targets,current)
+        return decision('GSM','판정',f'모든 후보가 10개월 SMA 아래 → {cash_name} 100%',evidence,targets,current)
     top=max(1,int((params or {}).get('top',1)))
     winners=passed.sort_values(['return12','ticker'],ascending=[False,True]).head(top)
     for t in winners.ticker:targets[t]=GSM_INVEST/len(winners)
     targets[cash]=100-GSM_INVEST
     picked=', '.join(f'{w["name"]} (12개월 {w.return12:+.2f}%)' for _,w in winners.iterrows())
     split=f'{GSM_INVEST:g}% 투자' if len(winners)==1 else f'각 {GSM_INVEST/len(winners):g}% 투자'
-    return decision('GSM','판정',f'{picked} 선택 → {split} · 현금 {100-GSM_INVEST:g}%',evidence,targets,current)
+    return decision('GSM','판정',f'{picked} 선택 → {split} · {cash_name} {100-GSM_INVEST:g}%',evidence,targets,current)
 
 
 def laa_filters(sub):

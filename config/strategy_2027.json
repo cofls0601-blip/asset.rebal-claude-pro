@@ -130,7 +130,7 @@
         },
         {
           "ticker": "195970",
-          "name": "ARIRANG 선진국MSCI(합성 H)",
+          "name": "PLUS 선진국MSCI(합성 H)",
           "market": "KR",
           "category": "선진국 주식",
           "role": "",
@@ -138,7 +138,7 @@
         },
         {
           "ticker": "195980",
-          "name": "ARIRANG 신흥국MSCI(합성 H)",
+          "name": "PLUS 신흥국MSCI(합성 H)",
           "market": "KR",
           "category": "신흥국 주식",
           "role": "",

@@ -56,8 +56,8 @@ KR_TICKERS = [
     "005380.KS",  # 현대차
     "024110.KS",  # 기업은행
     # 국내 ETF 호환 후보 (2026-11-09, 이름은 tickers.csv로 확인)
-    "195970.KS",  # ARIRANG 선진국MSCI(합성 H)
-    "195980.KS",  # ARIRANG 신흥국MSCI(합성 H)
+    "195970.KS",  # PLUS 선진국MSCI(합성 H)
+    "195980.KS",  # PLUS 신흥국MSCI(합성 H)
     "446720.KS",  # SOL 미국배당다우존스
     "458730.KS",  # TIGER 미국배당다우존스
     "329750.KS",  # TIGER 미국달러단기채권액티브
@@ -77,7 +77,7 @@ KR_TICKERS = [
     "381170.KS",  # TIGER 미국테크TOP10 (확인용)
     "272580.KS",  # TIGER 단기채권액티브
     "455030.KS",  # KODEX 미국달러SOFR금리액티브(합성)
-    "189400.KS",  # ARIRANG 글로벌MSCI(합성 H)
+    "189400.KS",  # PLUS 글로벌MSCI(합성 H)
     "283580.KS",  # KODEX 차이나CSI300 (확인용)
     "238720.KS",  # KINDEX 일본Nikkei225(H) (확인용)
     "182480.KS",  # TIGER 미국MSCI리츠(합성 H)
