@@ -88,4 +88,39 @@ class UITests(unittest.TestCase):
    at.radio(key='rebal_step').set_value('4 · 마감').run();self.click(at,'이번 달 마감')
   self.assertEqual(len(at.session_state['snapshots']),2);self.assertEqual(at.session_state['rebal_step'],'2 · 할 일')
 
+ def test_2027_accounts_on_monthly_rebalancing(self):
+  import json
+  import streamlit as st
+  from streamlit_app.data import normalize_strategies
+  st.cache_data.clear();self.addCleanup(st.cache_data.clear)  # app caches prices; keep fake prices out of other tests
+  at=self.start()
+  rows=[('DAA','과세 연금저축',t,t,'KR',10.) for t in ['360750','133690','195970','195980','411060','308620','476760','153130']]+[('DAA','과세 연금저축','CASH','현금','KR',100000.)]
+  rows+=[('ISA','ISA','225040','TIGER 미국S&P500레버리지(합성 H)','KR',0.),('ISA','ISA','153130','KODEX 단기채권','KR',10.),('ISA','ISA','CASH','현금','KR',0.)]
+  rows+=[('EM','일반계좌 1','005930','삼성전자','KR',10.),('EM','일반계좌 1','SPY','SPDR S&P 500 ETF','US',1.),('EM','일반계좌 1','CASH','현금','KR',0.)]
+  h=pd.DataFrame([dict(strategy=c,account=a,ticker=t,name=n,market=mk,category='현금' if t in ('CASH','153130') else '선진국 주식',
+                       role='레버리지' if t=='225040' else '',target_pct=0.,shares=q) for c,a,t,n,mk,q in rows])
+  at.session_state['holdings']=m.validate_holdings(h)
+  params={'DAA':{},'ISA':{'mode':'trend','signal':'SPY','cash':'153130'},
+          'EM':{'mode':'kr_half','kr_share':50,'signal':'069500','spx':'SPY','month':12,'max_pct':30,'start':'2027-01'}}
+  at.session_state['strategies']=normalize_strategies(pd.DataFrame([dict(code=c,account=a,rule='',params_json=json.dumps(p))
+                                                                    for (c,p),a in zip(params.items(),['과세 연금저축','ISA','일반계좌 1'])]))
+  growth={'133690':.30,'360750':.20,'411060':.15,'195970':.02,'195980':.05,'308620':.01,'476760':-.05,'153130':.03,
+          'AGG':.04,'SPY':.15,'069500':.10,'225040':.3,'005930':.1,'KRW=X':0.}
+  def fetch(t,market,d,adjusted=False):
+   idx=pd.bdate_range(end=pd.Timestamp(d),periods=420)
+   g=growth.get(t,0.);base=1300. if t=='KRW=X' else 100.
+   return pd.Series([base*(1+g)**(i/252) for i in range(len(idx))],index=idx)
+  with patch.object(m,'fetch_prices',side_effect=fetch):
+   at.radio(key='page').set_value('월말 리밸런싱').run();self.assertFalse(at.exception)
+   html=' '.join(x.value for x in at.markdown)
+   self.assertIn('위험 신호 0개 → 공격 100%',html)
+   self.assertIn('133690·360750·411060',html)
+   self.assertIn('SPY SMA 위 → TIGER 미국S&amp;P500레버리지(합성 H) 100%',html)
+   self.assertIn('할 일 없음',html)
+   self.click(at,'할 일 확정 → 체결 단계로')
+  daa=at.session_state['holdings'].query("strategy=='DAA'").set_index('ticker').target_pct
+  self.assertAlmostEqual(daa['133690'],100/3,places=3);self.assertEqual(daa['476760'],0.)
+  isa=at.session_state['holdings'].query("strategy=='ISA'").set_index('ticker').target_pct
+  self.assertEqual(isa['225040'],100.)
+
 if __name__=='__main__':unittest.main()

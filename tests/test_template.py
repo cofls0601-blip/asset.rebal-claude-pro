@@ -35,20 +35,36 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(float(nh.loc[(nh.strategy == "GSM") & (nh.ticker == "133690"), "shares"].iloc[0]), 10)
         self.assertEqual(float(nh.loc[(nh.strategy == "GSM") & (nh.ticker == "133690"), "target_pct"].iloc[0]), 80)  # null → 유지
         self.assertEqual(float(nh.loc[(nh.strategy == "GSM") & (nh.ticker == "411060"), "shares"].iloc[0]), 0)
-        self.assertEqual(json.loads(ns.set_index("code").loc["GSM", "params_json"]), {"top": 2})
+        self.assertEqual(json.loads(ns.set_index("code").loc["GSM", "params_json"]), {"top": 2, "cash": "153130"})
         self.assertEqual(len(nv), 1)  # 이전 GSM 설정 보관
 
     def test_strategies_not_in_template_are_left_alone(self):
         h, s, v = workspace()
+        h = pd.concat([h, normalize_holdings(pd.DataFrame([dict(strategy="OLD", account="기타", ticker="QQQ", name="QQQ", market="US",
+                                                               category="선진국 주식", role="", target_pct=100, shares=2)]))], ignore_index=True)
         nh, _, _, changes = apply_template(h, s, v, self.t)
-        self.assertEqual(float(nh.loc[(nh.strategy == "SSO") & (nh.ticker == "SSO"), "shares"].iloc[0]), 3)
-        self.assertIn("SSO", set(changes["전략"]))
+        self.assertEqual(float(nh.loc[(nh.strategy == "OLD") & (nh.ticker == "QQQ"), "shares"].iloc[0]), 2)
+        self.assertIn("OLD", set(changes["전략"]))
+
+    def test_replaces_moves_old_holdings_and_marks_them_for_sale(self):
+        h, s, v = workspace()
+        s = pd.concat([s, normalize_strategies(pd.DataFrame([dict(code="SSO", rule="ladder", params_json="{}", account="일반계좌 2")]))], ignore_index=True)
+        nh, ns, nv, changes = apply_template(h, s, v, self.t)
+        self.assertFalse(nh.strategy.eq("SSO").any())
+        spx = nh[nh.strategy == "SPX"].set_index("ticker")
+        self.assertEqual(float(spx.loc["SSO", "shares"]), 3)        # 수량 그대로
+        self.assertEqual(float(spx.loc["SSO", "target_pct"]), 0)     # 목록에 없음 → 매도 대상
+        self.assertEqual(float(spx.loc["SPY", "target_pct"]), 100)
+        self.assertEqual(float(spx.loc["CASH", "shares"]), 100)      # 같은 계좌 현금은 이어받음
+        self.assertFalse(bool(ns.set_index("code").loc["SSO", "active"]))
+        self.assertIn("전략 교체", set(changes["항목"]))
 
     def test_em_keeps_its_own_holdings(self):
         h, s, v = workspace()
         nh, *_ = apply_template(h, s, v, self.t)
         em = nh[nh.strategy == "EM"]
-        self.assertEqual(set(em.ticker), {"005930", "CASH"})
+        self.assertEqual(set(em.ticker), {"005930", "SPY", "CASH"})
+        self.assertEqual(float(em.set_index("ticker").loc["005930", "shares"]), 5)
 
 
 if __name__ == "__main__":

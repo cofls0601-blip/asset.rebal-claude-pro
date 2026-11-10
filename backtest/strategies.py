@@ -257,6 +257,23 @@ def mix(stocks: dict, stock_share: float, filter_asset=None, keep_below=1.0, mon
     return strat
 
 
+def kr_half_spx(kr=.5, signal="KOSPI", spx="SPX", month=12):
+    """2027 일반계좌 1: 국내 주식 kr + S&P500 (1-kr). signal이 10개월 SMA 아래면 국내 몫의 절반을 현금으로.
+    신호가 바뀐 달, 매년 month월, 첫 달에만 비중을 다시 맞춘다(streamlit_app.rules.check_kr_half와 같음)."""
+    def strat(d, ctx):
+        m = ctx.m
+        below = ctx.val(m.close, signal) < ctx.val(m.sma(10), signal)
+        prev = ctx.state.get("below")
+        ctx.state["below"] = below
+        first = not ctx.state.get("started")
+        ctx.state["started"] = True
+        if first or d.month == month or below != prev:
+            k = kr * (.5 if below else 1)
+            return {signal: k, CASH: kr - k, spx: 1 - kr}
+        return None
+    return strat
+
+
 def _score(m, kind):
     if kind == "12m":
         return m.mom(12)

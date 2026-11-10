@@ -16,7 +16,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2026-11-03 · 월말 리밸런싱'
+APP_VERSION='2026-11-10 · 2027 전략(DAA·S&P2배 추세·국내 절반 필터)'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -56,7 +56,8 @@ if connected and not st.session_state.get('loaded'):
     except DataError as e:st.error(str(e));st.button('원장 다시 읽기');st.stop()
 
 @st.cache_data(ttl=900,show_spinner=False)
-def prices(t,market,day):return m.fetch_prices(t,market,day)
+def prices(t,market,day,adjusted=False):
+    return m.fetch_prices(t,market,day,adjusted=True) if adjusted else m.fetch_prices(t,market,day)
 def find(query,market,mode):return m.search(query,market,mode)
 
 def refresh(day):
@@ -133,7 +134,7 @@ if page=='월말 리밸런싱':
 current=st.session_state.get('valued')
 if page!='설정' and (page=='월말 리밸런싱' or not st.session_state.demo) and (not current or current['date']!=str(day)):
     with st.spinner('종가·환율을 불러옵니다…'):refresh(day)
-descriptions={'월말 리밸런싱':'기준일 → 할 일 확인 → 체결 입력 → 마감, 순서대로 진행하세요.','이번달':'총자산과 계좌별 자산을 한눈에 확인하세요. 상세를 누르면 종목이 펼쳐집니다.','월말 점검':'GSM → LAA → SSO → ISA (→ EM 연 1회) 순서로 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
+descriptions={'월말 리밸런싱':'기준일 → 할 일 확인 → 체결 입력 → 마감, 순서대로 진행하세요.','이번달':'총자산과 계좌별 자산을 한눈에 확인하세요. 상세를 누르면 종목이 펼쳐집니다.','월말 점검':'GSM → DAA → ISA → 일반계좌 1 순서로(2026 전략이면 GSM → LAA → SSO → ISA) 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
 st.caption(descriptions[page]+f' · 기준일 {day}')
 if st.session_state.get('notice'):st.success(st.session_state.pop('notice'))
 result=st.session_state.get('valued');view=result['view'] if result and result['date']==str(day) else None
@@ -384,7 +385,7 @@ elif page=='설정':
         if not codes:st.info('전략 관리에서 전략을 먼저 추가하세요.')
         else:
             code=st.selectbox('전략',codes,key='asset_strategy');sub=h[h.strategy.eq(code)].copy()
-            st.caption('보유수량은 최종 잔고입니다. CASH 수량은 원화 현금 잔액입니다. 후보 종목은 수량 0으로 등록하세요. 역할: LAA 필터 종목은 「필터」, SSO·ISA 매수 종목은 「레버리지」(비워 두면 종목명으로 찾습니다).')
+            st.caption('보유수량은 최종 잔고입니다. CASH 수량은 원화 현금 잔액입니다. 후보 종목은 수량 0으로 등록하세요. 역할: LAA 필터 종목은 「필터」, SSO·ISA 매수 종목은 「레버리지」(비워 두면 종목명으로 찾습니다). DAA·ISA·일반계좌 1의 현금 몫은 템플릿의 단기채권(153130) 행에 둡니다.')
             labels={'ticker':'티커','name':'종목명','market':'시장','category':'자산 분류','role':'역할','shares':'보유수량','target_pct':'목표비중 (%)'}
             shown=sub[list(labels)].rename(columns=labels)
             with st.form('edit_assets'+code+str(st.session_state.revision)):

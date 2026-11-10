@@ -23,7 +23,7 @@
 
 ### 전략 목록 (2026 기준, 자세한 규칙: docs/전략 명세.md)
 
-> 2027년 전략(사용자 확정 2026-10-28)은 docs/연도별 전략.md와 config/strategy_2027.json에 있다. 앱은 전략표 params_json으로 2027 규칙을 켠다(GSM top 2, ISA trend, EM max_pct).
+> 2027년 전략(사용자 확정 2026-11-10)은 docs/2027 운용 안내.md, docs/연도별 전략.md, config/strategy_2027.json에 있다: 비과세 연금 GSM 상위2, 과세 연금 DAA, ISA S&P500 2배 추세, 일반계좌 1 국내 50% 절반 필터 + S&P500 50%, 일반계좌 2 S&P500 보유. 앱은 전략표 params_json으로 2027 규칙을 켠다. 각 계좌는 각자 자기 전략을 가진다.
 
 | 코드 | 계좌 | 요약 | 앱 판정 |
 |---|---|---|---|
@@ -55,7 +55,7 @@ docs/                     설정 안내, 전략 명세, 작업 기록
 tests/                    unittest (python -m unittest discover -s tests)
 ```
 
-`streamlit_app/rules.py`: 월말 점검 판정. LAA·GSM·SSO·ISA 전용 규칙이고, 그 밖의 전략은 판정하지 않는다. 예전 저장소 `asset-rebalance-streamlit`의 범용 규칙 엔진은 화면이 지저분하고 해당 없는 전략까지 판정하는 문제가 있어서 사용자가 쓰지 않았다. 범용 엔진으로 되돌리지 않는다.
+`streamlit_app/rules.py`: 월말 점검 판정. GSM·DAA·LAA·SSO·ISA·EM 전용 규칙이고, 그 밖의 전략은 판정하지 않는다. 예전 저장소 `asset-rebalance-streamlit`의 범용 규칙 엔진은 화면이 지저분하고 해당 없는 전략까지 판정하는 문제가 있어서 사용자가 쓰지 않았다. 범용 엔진으로 되돌리지 않는다.
 
 ## 지켜야 할 것
 

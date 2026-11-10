@@ -89,9 +89,12 @@ def domestic_market(base: Market, usd: Market, available: set) -> tuple[Market, 
     assets[CASH] = ["153130.KS", "114260.KS", "TBILL"]
     m = build_market(close, adj, assets, local=tuple(assets))
     me = base.close.index
-    keep = [c for c in base.close.columns if c not in m.close.columns and c in ("NDX_USD", "SPX_USD", "TIPX", "AGG")]
-    out = Market(close=m.close.reindex(me).join(base.close[keep]), total=m.total.reindex(me).join(base.total[keep]),
-                 high52=m.high52.reindex(me).join(base.high52[keep]), extra=dict(base.extra))
+    keep = [c for c in base.close.columns if c not in m.close.columns and c in ("NDX_USD", "SPX_USD", "TIPX")]
+    # 신호에만 쓰는 미국 자산(DAA 카나리아 AGG)은 원래 규칙대로 달러 가격을 쓴다.
+    usd_sig = [c for c in ("AGG",) if c in usd.close.columns]
+    out = Market(close=m.close.reindex(me).join(base.close[keep]).join(usd.close[usd_sig].reindex(me)),
+                 total=m.total.reindex(me).join(base.total[keep]).join(usd.total[usd_sig].reindex(me)),
+                 high52=m.high52.reindex(me).join(base.high52[keep]).join(usd.high52[usd_sig].reindex(me)), extra=dict(base.extra))
     real = {n: pd.Timestamp(close[s[0]].first_valid_index()) for n, s in info.items() if s}
     return out, {"spec": info, "real_start": real, "gap": gaps}
 
@@ -171,6 +174,7 @@ GEN = {
     "SSO 단계(2026)": ("레버리지", lambda v: S.ladder("SSO", "SPX_USD", .70, S.SSO_STEPS), True),
     "SSO 단계+추가매수 보류": ("레버리지", lambda v: S.ladder("SSO", "SPX_USD", .70, S.SSO_STEPS, sma_exit=True), False),
     "DGA": ("교체형", lambda v: dga(canary_n=v["sma"] + 2, def_n=v["sma"] - 4), False),
+    "국내 절반필터50+S&P50": ("고정+필터", lambda v: S.kr_half_spx(.5), True),  # 2027 일반계좌 1 (사용자 확정)
 }
 VARIANTS = {"기본": {"sma": 10, "top": 3, "win": (1, 3, 6), "mom": 12},
             "짧게": {"sma": 8, "top": 2, "win": (1, 3), "mom": 9},
@@ -423,7 +427,8 @@ def prefilter(series, names, w, approx_assets, dom_info) -> pd.DataFrame:
 
 
 NAMED = {
-    "F1 (2027 확정)": ("GSM 상위2+금·채권", "LAA 변형", "나스닥2배 SMA 추세", "국내 주식 보유", "S&P500 보유"),
+    "2027 확정 (11-10)": ("GSM 상위2+금·채권", "DAA", "S&P2배 SMA 추세", "국내 절반필터50+S&P50", "S&P500 보유"),
+    "F1 (10-28 확정)": ("GSM 상위2+금·채권", "LAA 변형", "나스닥2배 SMA 추세", "국내 주식 보유", "S&P500 보유"),
     "2026 조합": ("GSM 1위(2026)", "LAA 변형", "나스닥2배 단계(2026)", "국내 주식 보유", "SSO 단계(2026)"),
     "b (연금 GSM 둘+듀얼)": ("GSM 상위2 현금없음", "GSM 상위2 현금없음", "나스닥2배 SMA 추세", "국내·미국 듀얼", "S&P500 보유"),
     "b + 과세 LAA": ("GSM 상위2 현금없음", "LAA 변형", "나스닥2배 SMA 추세", "국내·미국 듀얼", "S&P500 보유"),

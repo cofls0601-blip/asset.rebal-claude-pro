@@ -36,7 +36,21 @@ def apply_template(holdings, strategies, versions, template):
     now = datetime.now(timezone.utc).isoformat()
     for s in template["strategies"]:
         code = s["code"]
-        row = {"code": code, "account": s["account"], "description": s["description"], "dynamic": s["rule"] in ("gsm", "isa_trend"),
+        old_code = s.get("replaces")
+        if old_code and h.strategy.eq(old_code).any():
+            # 같은 계좌의 이전 전략(예: LAA → DAA)의 보유 행을 새 전략으로 옮긴다. 수량은 그대로.
+            moved = h.strategy.eq(old_code)
+            clash = moved & h.ticker.isin(set(h.loc[h.strategy.eq(code), "ticker"]))
+            if clash.any():
+                raise DataError(f"{old_code}와 {code}에 같은 종목이 있어 옮길 수 없습니다: {', '.join(h.loc[clash, 'ticker'])}")
+            h.loc[moved, "strategy"] = code
+            changes.append({"전략": code, "항목": "전략 교체", "내용": f"{old_code} 보유 {int(moved.sum())}종목을 {code}로 옮김 · 목록에 없는 종목은 목표 0%(매도 대상)"})
+            gone = conf.code.eq(old_code)
+            if gone.any():
+                archived.append({**conf[gone].iloc[0].to_dict(), "archived_at": now})
+                conf.loc[gone, "active"] = False
+                conf.loc[gone, "change_note"] = f"{template['version']}: {code}로 교체"
+        row = {"code": code, "account": s["account"], "description": s["description"], "dynamic": s["rule"] in ("gsm", "isa_trend", "daa", "kr_half"),
                "active": True, "annual_limit": 0.0, "rule": s["rule"], "params_json": json.dumps(s.get("params", {}), ensure_ascii=False),
                "version": template["version"], "effective_date": template["effective_date"], "source": template.get("source", ""),
                "change_note": template["name"], "tolerance_pct": 0.0, "fractional_us": False, "cash_reserve": 0.0}

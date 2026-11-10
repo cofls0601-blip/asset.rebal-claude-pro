@@ -111,11 +111,12 @@ def adjust(h,code,ticker,quantity,side):
     return validate_holdings(out),before,after
 
 
-def fetch_prices(ticker,market,day):
+def fetch_prices(ticker,market,day,adjusted=False):
+    """Daily closes. adjusted=True returns dividend-adjusted closes (DAA momentum, like the backtest)."""
     import yfinance as yf
     d=yf.download(symbol(ticker,market),start=day-timedelta(days=1600),end=day+timedelta(days=1),auto_adjust=False,progress=False,threads=False)
     if d.empty:return pd.Series(dtype=float)
-    s=d['Close'];return s.iloc[:,0] if isinstance(s,pd.DataFrame) else s
+    s=d['Adj Close' if adjusted and 'Adj Close' in d else 'Close'];return s.iloc[:,0] if isinstance(s,pd.DataFrame) else s
 
 
 # Common portfolio ETFs remain discoverable when the remote search service is unavailable.
