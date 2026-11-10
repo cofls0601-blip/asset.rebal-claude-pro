@@ -107,6 +107,7 @@ def prepare(data_dir: Path = DATA_DIR, krw: bool = False) -> Market:
                       high52=full.high52.join(usd.high52))
     full.extra["krw"] = close["KRW=X"].resample("ME").last()
     full.extra["close_d"], full.extra["adj_d"] = close, adj
+    full.extra["lev_usd_d"] = pd.DataFrame({k: v for k, v in syn.items() if k != CASH})  # 레버리지 일간(달러)
     return full
 
 

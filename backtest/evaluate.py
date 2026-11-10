@@ -65,9 +65,10 @@ def domestic_market(base: Market, usd: Market, available: set) -> tuple[Market, 
             continue
         code, label, hedged, approx, proxies = spec
         cols = [code]
-        if proxies is None:  # 레버리지: 합성 2배 지수(base에 있는 달러/원화 값) 사용
-            lev = usd.total[name] if hedged else base.total[name]
-            close[f"{name}_PX"] = lev.reindex(close.index).ffill()
+        if proxies is None:  # 레버리지: 합성 2배 일간 지수(환헤지면 달러 그대로, 환노출이면 × 원/달러)
+            lev_d = base.extra["lev_usd_d"][name]
+            lev = lev_d if hedged else lev_d * fx.reindex(lev_d.index).ffill(limit=5)
+            close[f"{name}_PX"] = lev.reindex(close.index).ffill(limit=5)
             adj[f"{name}_PX"] = close[f"{name}_PX"]
             cols.append(f"{name}_PX")
         else:

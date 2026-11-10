@@ -177,9 +177,24 @@ def build_market(close_d: pd.DataFrame, adj_d: pd.DataFrame, assets: dict, synth
                 tr_d[c] = tr_d[c] * rate
     high = cl_d.rolling("365D", min_periods=200).max()
     me = cl_d.resample("ME").last().index
-    def month_end(df: pd.DataFrame) -> pd.DataFrame:
-        return df.resample("ME").last()
     return Market(month_end(cl_d), month_end(tr_d), month_end(high).reindex(me))
+
+
+# 월 판단일: 0이면 월말. n이면 그달 마지막 거래일보다 n거래일 앞선 날 값을 쓴다(이름표는 월말 그대로).
+SAMPLE_OFFSET = 0
+
+
+def month_end(df: pd.DataFrame) -> pd.DataFrame:
+    if SAMPLE_OFFSET == 0:
+        return df.resample("ME").last()
+    filled = df.ffill(limit=45)  # 자료가 빈 날(환율 공백, 월 단위 금 시세)은 직전 값으로 채운다
+    per = filled.index.to_period("M")
+    from_end = pd.Series(range(len(filled)), index=filled.index).groupby(per).cumcount(ascending=False).values
+    size = pd.Series(1, index=filled.index).groupby(per).transform("size").values
+    pick = (from_end == SAMPLE_OFFSET) | ((size <= SAMPLE_OFFSET) & (from_end == size - 1))
+    out = filled[pick]
+    out.index = out.index.to_period("M").to_timestamp(how="end").normalize()
+    return out
 
 
 def _splice(closes: list[pd.Series], totals: list[pd.Series]) -> tuple[pd.Series, pd.Series]:
