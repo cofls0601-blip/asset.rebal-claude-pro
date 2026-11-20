@@ -49,9 +49,9 @@
     },
     {
       "code": "SPX", "account": "일반계좌 2", "rule": "hold", "params": {},
-      "description": "S&P500(SPY) 보유. 판정 없음. 2026 SSO 전략을 대신한다(SSO 매도 차익 양도세 확인)",
+      "description": "S&P500(VOO) 보유. 판정 없음. 2026 SSO 전략을 대신한다. 2026년 안에 QLD·QQQ·SSO를 정리하고 VOO로 옮긴다(사용자 결정 2026-11-20)",
       "holdings": [
-        {"ticker": "SPY", "name": "SPDR S&P 500 ETF", "market": "US", "category": "선진국 주식", "role": "", "target_pct": 100},
+        {"ticker": "VOO", "name": "Vanguard S&P 500 ETF", "market": "US", "category": "선진국 주식", "role": "", "target_pct": 100},
         {"ticker": "CASH", "name": "현금", "market": "KR", "category": "현금", "role": "현금", "target_pct": 0}
       ]
     },
