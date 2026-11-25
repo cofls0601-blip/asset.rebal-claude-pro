@@ -12,7 +12,7 @@ def workspace():
     h = normalize_holdings(pd.DataFrame([
         dict(strategy="GSM", account="비과세 연금저축", ticker="133690", name="TIGER 미국나스닥100", market="KR", category="선진국 주식", role="", target_pct=80, shares=10),
         dict(strategy="GSM", account="비과세 연금저축", ticker="CASH", name="현금", market="KR", category="현금", role="", target_pct=20, shares=1000),
-        dict(strategy="EM", account="일반계좌 1", ticker="005930", name="삼성전자", market="KR", category="신흥국 주식", role="", target_pct=0, shares=5),
+        dict(strategy="KSP", account="일반계좌 1", ticker="005930", name="삼성전자", market="KR", category="신흥국 주식", role="", target_pct=0, shares=5),
         dict(strategy="SSO", account="일반계좌 2", ticker="SSO", name="SSO", market="US", category="선진국 주식", role="", target_pct=70, shares=3),
         dict(strategy="SSO", account="일반계좌 2", ticker="CASH", name="현금", market="KR", category="현금", role="", target_pct=30, shares=100),
     ]))
@@ -62,17 +62,26 @@ class TemplateTests(unittest.TestCase):
     def test_em_keeps_its_own_holdings(self):
         h, s, v = workspace()
         nh, *_ = apply_template(h, s, v, self.t)
-        em = nh[nh.strategy == "EM"]
+        em = nh[nh.strategy == "KSP"]
         self.assertEqual(set(em.ticker), {"005930", "SPY", "CASH"})
         self.assertEqual(float(em.set_index("ticker").loc["005930", "shares"]), 5)
 
 
     def test_existing_account_name_is_kept(self):
         h, s, v = workspace()
-        h.loc[h.strategy == "EM", "account"] = "하나"
+        h.loc[h.strategy == "KSP", "account"] = "하나"
         nh, ns, *_ = apply_template(h, s, v, self.t)
-        self.assertEqual(set(nh.loc[nh.strategy == "EM", "account"]), {"하나"})   # new SPY row too
-        self.assertEqual(ns.set_index("code").loc["EM", "account"], "하나")
+        self.assertEqual(set(nh.loc[nh.strategy == "KSP", "account"]), {"하나"})   # new SPY row too
+        self.assertEqual(ns.set_index("code").loc["KSP", "account"], "하나")
+
+
+    def test_small_em_account_is_left_alone(self):
+        h, s, v = workspace()
+        extra = normalize_holdings(pd.DataFrame([dict(strategy="EM", account="삼성 소액", ticker="005930", name="삼성전자", market="KR",
+                                                     category="신흥국 주식", role="", target_pct=100, shares=2)]))
+        nh, *_ = apply_template(pd.concat([h, extra], ignore_index=True), s, v, self.t)
+        em = nh[nh.strategy == "EM"]
+        self.assertEqual((list(em.ticker), list(em.account), float(em.shares.iloc[0])), (["005930"], ["삼성 소액"], 2.0))
 
 
 if __name__ == "__main__":

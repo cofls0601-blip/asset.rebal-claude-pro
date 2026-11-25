@@ -17,7 +17,8 @@ import pandas as pd
 from streamlit_app.data import DataError
 from streamlit_app.manual import clean
 
-ORDER=['GSM','DAA','LAA','SSO','ISA','EM']
+# KSP = 하나 계좌(국내 + S&P500, 2027 국내 절반 필터). EM stays the old account-1 code (cap rule only with params).
+ORDER=['GSM','DAA','LAA','SSO','ISA','KSP','EM']
 QUARTER_MONTHS=(3,6,9,12)
 # Same staged weights as the spec: (drawdown threshold %, risk-asset weight %).
 LADDERS={
@@ -288,11 +289,13 @@ def evaluate(view,day,fetch,strategies=None):
     out=[];params=strategy_params(strategies)
     for code,sub in view.groupby('strategy',sort=False):
         p=params.get(code,{})
+        if code=='KSP' and p.get('mode')!='kr_half':
+            out.append(decision(code,'판정 없음','2027 전략 템플릿을 적용하면 국내 절반 필터 + S&P500으로 판정합니다 · 지금은 보유'));continue
         if code not in ORDER or (code=='EM' and 'max_pct' not in p and p.get('mode')!='kr_half'):
             out.append(decision(code,'판정 없음','규칙 판정 대상이 아닙니다 · 보유'));continue
         try:
             if code=='DAA':d=check_daa(sub,day,fetch,p)
-            elif code=='EM' and p.get('mode')=='kr_half':d=check_kr_half(code,sub,day,fetch,p)
+            elif code in ('KSP','EM') and p.get('mode')=='kr_half':d=check_kr_half(code,sub,day,fetch,p)
             elif code=='EM':d=check_cap(code,sub,day,fetch,p)
             elif code=='ISA' and p.get('mode')=='trend':d=check_trend(code,sub,day,fetch,p)
             elif code in LADDERS:d=check_ladder(code,sub,day,fetch,p)

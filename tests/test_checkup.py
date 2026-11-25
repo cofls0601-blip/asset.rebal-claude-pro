@@ -43,4 +43,18 @@ class CheckupTests(unittest.TestCase):
         self.assertTrue(all(any('같은 계좌 이름' in t for _,t in r['issues']) for r in check(h)))
 
 
+
+class KspTests(unittest.TestCase):
+    def test_ksp_waits_for_the_2027_template(self):
+        from datetime import date
+        from streamlit_app import rules
+        v=pd.DataFrame([dict(strategy='KSP',ticker='CASH',name='현금',role='현금',close=1.,sma10=None,return12=None,weight=100.,target_pct=100.,value=1.),
+                        dict(strategy='EM',ticker='005930',name='삼성전자',role='',close=1.,sma10=None,return12=None,weight=100.,target_pct=100.,value=1.)])
+        out={d['code']:d for d in rules.evaluate(v,date(2026,11,30),None)}
+        self.assertEqual(out['KSP']['status'],'판정 없음');self.assertIn('2027',out['KSP']['headline'])
+        self.assertEqual(out['EM']['status'],'판정 없음')
+        self.assertFalse(check(holdings([('KSP','하나','CASH','현금','KR','현금','현금',100,0)]))[0]['judged'])
+        self.assertIn('국내 주식 50%',describe('KSP',{'mode':'kr_half','kr_share':50}))
+
+
 if __name__=='__main__':unittest.main()

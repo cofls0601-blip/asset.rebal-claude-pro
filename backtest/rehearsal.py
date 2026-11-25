@@ -37,7 +37,7 @@ def main(day_text: str) -> None:
     day = date.fromisoformat(day_text)
     w = empty_workspace()
     h, s, _, _ = apply_template(w["holdings"], w["strategies"], w["strategy_versions"], load_template())
-    kr = pd.DataFrame([dict(strategy="EM", account="일반계좌 1", ticker="069500", name="KODEX 200 (국내 주식 대신)",
+    kr = pd.DataFrame([dict(strategy="KSP", account="일반계좌 1", ticker="069500", name="KODEX 200 (국내 주식 대신)",
                             market="KR", category="신흥국 주식", role="", target_pct=0., shares=1.)])
     h = pd.concat([h, kr], ignore_index=True)
     h["shares"] = h.ticker.map(lambda t: 1000. if t == "CASH" else 1.)

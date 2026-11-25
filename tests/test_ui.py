@@ -96,12 +96,12 @@ class UITests(unittest.TestCase):
   at=self.start()
   rows=[('DAA','과세 연금저축',t,t,'KR',10.) for t in ['360750','133690','195970','195980','411060','308620','476760','153130']]+[('DAA','과세 연금저축','CASH','현금','KR',100000.)]
   rows+=[('ISA','ISA','225040','TIGER 미국S&P500레버리지(합성 H)','KR',0.),('ISA','ISA','153130','KODEX 단기채권','KR',10.),('ISA','ISA','CASH','현금','KR',0.)]
-  rows+=[('EM','일반계좌 1','005930','삼성전자','KR',10.),('EM','일반계좌 1','SPY','SPDR S&P 500 ETF','US',1.),('EM','일반계좌 1','CASH','현금','KR',0.)]
+  rows+=[('KSP','일반계좌 1','005930','삼성전자','KR',10.),('KSP','일반계좌 1','SPY','SPDR S&P 500 ETF','US',1.),('KSP','일반계좌 1','CASH','현금','KR',0.)]
   h=pd.DataFrame([dict(strategy=c,account=a,ticker=t,name=n,market=mk,category='현금' if t in ('CASH','153130') else '선진국 주식',
                        role='레버리지' if t=='225040' else '',target_pct=0.,shares=q) for c,a,t,n,mk,q in rows])
   at.session_state['holdings']=m.validate_holdings(h)
   params={'DAA':{},'ISA':{'mode':'trend','signal':'SPY','cash':'153130'},
-          'EM':{'mode':'kr_half','kr_share':50,'signal':'069500','spx':'SPY','month':12,'max_pct':30,'start':'2027-01'}}
+          'KSP':{'mode':'kr_half','kr_share':50,'signal':'069500','spx':'SPY','month':12,'max_pct':30,'start':'2027-01'}}
   at.session_state['strategies']=normalize_strategies(pd.DataFrame([dict(code=c,account=a,rule='',params_json=json.dumps(p))
                                                                     for (c,p),a in zip(params.items(),['과세 연금저축','ISA','일반계좌 1'])]))
   growth={'133690':.30,'360750':.20,'411060':.15,'195970':.02,'195980':.05,'308620':.01,'476760':-.05,'153130':.03,
@@ -140,11 +140,12 @@ class UITests(unittest.TestCase):
   h=pd.DataFrame([dict(strategy='EM',account='삼성 소액',ticker='005930',name='삼성전자',market='KR',category='신흥국 주식',role='',target_pct=100.,shares=1.),
                   dict(strategy='HANA',account='하나',ticker='CASH',name='현금',market='KR',category='현금',role='현금',target_pct=100.,shares=0.)])
   at.session_state['holdings']=m.validate_holdings(h);at.run()
-  at.selectbox(key='rule_forEM').set_value('직접 입력(규칙 없음)').run();at.text_input(key='rule_textEM').set_value('samsung').run()
-  next(b for b in at.button if b.label=='EM → SAMSUNG로 바꾸기').click().run();self.assertFalse(at.exception)
-  sb=at.selectbox(key='rule_forHANA');sb.select_index([o.split(' · ')[0] for o in sb.options].index('EM')).run()  # options show 'EM · 규칙 설명'
-  next(b for b in at.button if b.label=='HANA → EM로 바꾸기').click().run();self.assertFalse(at.exception)
+  sb=at.selectbox(key='rule_forHANA');sb.select_index([o.split(' · ')[0] for o in sb.options].index('KSP')).run()  # options show 'KSP · 규칙 설명'
+  next(b for b in at.button if b.label=='HANA → KSP로 바꾸기').click().run();self.assertFalse(at.exception)
   got=at.session_state['holdings'].set_index('strategy').account.to_dict()
-  self.assertEqual(got,{'SAMSUNG':'삼성 소액','EM':'하나'})
+  self.assertEqual(got,{'EM':'삼성 소액','KSP':'하나'})
+  at.selectbox(key='rule_forEM').set_value('직접 입력(규칙 없음)').run();at.text_input(key='rule_textEM').set_value('etc').run()
+  next(b for b in at.button if b.label=='EM → ETC로 바꾸기').click().run();self.assertFalse(at.exception)  # free-text rename still works
+  self.assertIn('ETC',set(at.session_state['holdings'].strategy))
 
 if __name__=='__main__':unittest.main()
