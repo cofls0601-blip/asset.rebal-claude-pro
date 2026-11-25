@@ -54,7 +54,7 @@ class TemplateTests(unittest.TestCase):
         spx = nh[nh.strategy == "SPX"].set_index("ticker")
         self.assertEqual(float(spx.loc["SSO", "shares"]), 3)        # 수량 그대로
         self.assertEqual(float(spx.loc["SSO", "target_pct"]), 0)     # 목록에 없음 → 매도 대상
-        self.assertEqual(float(spx.loc["SPY", "target_pct"]), 100)
+        self.assertEqual(float(spx.loc["VOO", "target_pct"]), 100)  # 사용자 결정 2026-11-20: SPY 대신 VOO
         self.assertEqual(float(spx.loc["CASH", "shares"]), 100)      # 같은 계좌 현금은 이어받음
         self.assertFalse(bool(ns.set_index("code").loc["SSO", "active"]))
         self.assertIn("전략 교체", set(changes["항목"]))

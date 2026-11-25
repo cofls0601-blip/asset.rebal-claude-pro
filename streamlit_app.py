@@ -16,7 +16,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2026-11-10 · 2027 전략(DAA·S&P2배 추세·국내 절반 필터)'
+APP_VERSION='2026-11-25 · 브랜치 통합(2027 전략 + 일반계좌 2 VOO)'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 

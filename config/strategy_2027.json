@@ -263,11 +263,11 @@
       "rule": "hold",
       "replaces": "SSO",
       "params": {},
-      "description": "S&P500(SPY) 보유. 판정 없음. 2026 SSO는 팔고 SPY로(해외주식 양도세 확인)",
+      "description": "S&P500(VOO) 보유. 판정 없음. 2026 SSO 전략을 대신한다. 2026년 안에 QLD·QQQ·SSO를 정리하고 VOO로 옮긴다(사용자 결정 2026-11-20, 해외주식 양도세 확인)",
       "holdings": [
         {
-          "ticker": "SPY",
-          "name": "SPDR S&P 500 ETF",
+          "ticker": "VOO",
+          "name": "Vanguard S&P 500 ETF",
           "market": "US",
           "category": "선진국 주식",
           "role": "",
