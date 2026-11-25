@@ -10,7 +10,8 @@ const STATE = '_RebalanceState';
 const RECOVERY = '_RebalanceRecovery';
 
 function doGet() {
-  return jsonResponse({ok: true, service: 'rebalance', protocol: 1});
+  // Opening the /exec URL in a browser shows this version, to confirm the pasted script is deployed.
+  return jsonResponse({ok: true, service: 'rebalance', protocol: 1, version: '2026-11-25'});
 }
 
 function doPost(e) {
@@ -42,19 +43,25 @@ function doPost(e) {
     writeRecovery(ss, {workspace: workspace, state: state});
     writeState(ss, Object.assign({}, state, {pending: body.request_id}));
     SpreadsheetApp.flush();
+    let detail = {stage: 'write'};
     try {
       writeWorkspace(ss, body.workspace);
       SpreadsheetApp.flush();
+      detail = {stage: 'read'};
       const after = readWorkspace(ss);
+      // Plain-text cells give numbers and TRUE/FALSE back as text: compare meaning, not type.
+      const diff = firstDifference(body.workspace, after);
+      if (diff) { detail = diff; throw new Error('verification_failed'); }
       const savedToken = digest(after);
-      if (savedToken !== digest(body.workspace)) throw new Error('verification_failed');
       writeState(ss, {pending: '', token: savedToken, request_id: body.request_id});
       SpreadsheetApp.flush();
       // Retain the preceding complete generation as an additional recovery copy.
       return jsonResponse({ok: true, token: savedToken, request_id: body.request_id});
-    } catch (_) {
+    } catch (err) {
+      // Where it failed, never what the cell held.
+      if (detail.stage !== 'verify') detail.message = String(err && err.message || err).slice(0, 160);
       recoverPending(ss);
-      return jsonResponse({ok: false, error: 'save_failed_retry'});
+      return jsonResponse({ok: false, error: 'save_failed_retry', detail: detail});
     }
   } catch (err) {
     // Never echo credentials, input rows, or low-level URLs to clients.
@@ -183,9 +190,37 @@ function diagnoseRecovery() {
   console.log(JSON.stringify(report));
   return report;
 }
+// One spelling per meaning: 70, 70.0 and '70' → '70'; true and 'TRUE' → 'TRUE'; null → ''.
+// Text with a leading zero ('005930') stays text, so a lost zero still counts as a change.
+function cellKey(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+  if (typeof v === 'number') return String(Number(v.toPrecision(15)));
+  const s = String(v);
+  if (/^(true|false)$/i.test(s)) return s.toUpperCase();
+  if (/^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?$/.test(s)) return String(Number(Number(s).toPrecision(15)));
+  return s;
+}
+function cellKind(v) {
+  return v === null || v === undefined || v === '' ? 'empty' : typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : 'text';
+}
+function firstDifference(sent, got) {
+  for (const key of Object.keys(TABLE_NAMES)) {
+    const cols = sent.columns[key];
+    if (JSON.stringify(cols) !== JSON.stringify(got.columns[key])) return {stage: 'verify', table: TABLE_NAMES[key], problem: 'header'};
+    const rows = sent.tables[key].filter(row => cols.some(c => cellKey(row[c]) !== ''));
+    if (rows.length !== got.tables[key].length) return {stage: 'verify', table: TABLE_NAMES[key], problem: 'row_count', sent_rows: rows.length, sheet_rows: got.tables[key].length};
+    for (let i = 0; i < rows.length; i++) for (const c of cols) {
+      if (cellKey(rows[i][c]) !== cellKey(got.tables[key][i][c])) {
+        return {stage: 'verify', table: TABLE_NAMES[key], row: i + 2, column: c, sent: cellKind(rows[i][c]), sheet: cellKind(got.tables[key][i][c])};
+      }
+    }
+  }
+  return null;
+}
 function canonical(workspace) {
-  // Object key order, blank/null cells, and integer/float encoding must not alter identity.
-  return Object.keys(TABLE_NAMES).map(key => [key, workspace.columns[key], workspace.tables[key].map(row => workspace.columns[key].map(col => row[col] == null ? '' : row[col]))]);
+  // Key order, blank/null cells, number/text spelling and true/'TRUE' must not alter identity.
+  return Object.keys(TABLE_NAMES).map(key => [key, workspace.columns[key], workspace.tables[key].map(row => workspace.columns[key].map(col => cellKey(row[col])))]);
 }
 function digest(workspace) {
   return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify(canonical(workspace)), Utilities.Charset.UTF_8)

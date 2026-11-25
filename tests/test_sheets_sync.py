@@ -102,3 +102,14 @@ class PlainTextSheetTests(unittest.TestCase):
         self.assertEqual(restored['holdings'].ticker.iloc[0],w['holdings'].ticker.iloc[0])
         self.assertAlmostEqual(float(restored['holdings'].loc[restored['holdings'].ticker.eq('CASH'),'shares'].iloc[0]),12345678.1235,places=3)
         self.assertTrue(bool(restored['strategies'].active.iloc[0]))
+
+
+class ErrorDetailTests(unittest.TestCase):
+    def test_script_detail_becomes_a_readable_location(self):
+        reply={'ok':False,'error':'save_failed_retry','detail':{'stage':'verify','table':'Holdings','row':5,'column':'shares','sent':'number','sheet':'text'}}
+        t=Mock(post=lambda url,**k:Mock(raise_for_status=lambda:None,json=lambda:reply))
+        with self.assertRaisesRegex(SheetsError,'Holdings 탭 5번째 줄 「shares」 칸.*보낸 값 숫자, 시트 값 글자'):save_workspace(URL,SECRET,make_workspace(),'base',transport=t)
+        reply['detail']={'stage':'write','message':'Data validation violated'}
+        with self.assertRaisesRegex(SheetsError,'시트에 쓰는 중 오류: Data validation violated'):save_workspace(URL,SECRET,make_workspace(),'base',transport=t)
+        reply.pop('detail')
+        with self.assertRaisesRegex(SheetsError,'^저장 완료를 확인하지 못했습니다. 같은 작업을 재시도하세요$'):save_workspace(URL,SECRET,make_workspace(),'base',transport=t)

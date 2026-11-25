@@ -30,8 +30,24 @@ def request(url, secret, action, *, transport=None, **payload):
             'busy':'다른 저장이 진행 중입니다. 잠시 후 다시 저장하세요',
             'save_failed_retry':'저장 완료를 확인하지 못했습니다. 같은 작업을 재시도하세요',
             'recovery_required':'이전 저장 복구에 실패했습니다. 시트를 보존하고 운영 문서의 복구 절차를 확인하세요'}
-        raise SheetsError(errors.get(data.get('error'),'Sheets 작업 실패: '+str(data.get('error','unknown'))))
+        raise SheetsError(errors.get(data.get('error'),'Sheets 작업 실패: '+str(data.get('error','unknown')))+where(data.get('detail')))
     return data
+
+
+KINDS={'number':'숫자','text':'글자','boolean':'참/거짓','empty':'빈칸'}
+
+
+def where(detail):
+    """Readable location from the Apps Script (2026-11-25 version); older scripts send none."""
+    if not isinstance(detail,dict):return ''
+    stage=detail.get('stage')
+    if stage=='write':return f" (시트에 쓰는 중 오류: {detail.get('message','알 수 없음')})"
+    if stage=='read':return f" (저장 후 시트를 읽는 중 오류: {detail.get('message','알 수 없음')})"
+    if detail.get('problem')=='header':return f" ({detail.get('table')} 탭의 머리글이 저장 후 달라졌습니다)"
+    if detail.get('problem')=='row_count':return f" ({detail.get('table')} 탭: 보낸 줄 {detail.get('sent_rows')}개, 시트 줄 {detail.get('sheet_rows')}개)"
+    if detail.get('table'):
+        return f" ({detail['table']} 탭 {detail.get('row')}번째 줄 「{detail.get('column')}」 칸이 저장 후 달라졌습니다 · 보낸 값 {KINDS.get(detail.get('sent'),'?')}, 시트 값 {KINDS.get(detail.get('sheet'),'?')})"
+    return ''
 
 
 def load_workspace(url,secret,*,transport=None):
@@ -58,6 +74,18 @@ def cell_text(value):
     return str(value)
 
 
+NUMBER=re.compile(r'-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?')
+
+
+def cell_key(value):
+    """Same meaning → same key, as the Apps Script compares: 70, 70.0, '70' → '70'; True, 'TRUE' → 'TRUE'.
+    Text with a leading zero ('005930') stays text."""
+    text=cell_text(value)
+    if text.upper() in ('TRUE','FALSE'):return text.upper()
+    if NUMBER.fullmatch(text):return cell_text(float(f'{float(text):.12g}'))
+    return text
+
+
 def save_workspace(url,secret,workspace,token,*,transport=None):
     if not token:raise SheetsError('저장하기 전에 Sheets 원장을 읽어야 합니다')
     payload=json.loads(backup_bytes(workspace))
@@ -75,8 +103,8 @@ def save_workspace(url,secret,workspace,token,*,transport=None):
         raise SheetsError('저장 후 시트가 다시 변경되었습니다. 현재 작업을 백업하고 최신 자료를 읽으세요')
     for key in TABLES:
         # Compare cell texts: loading turns some text back into numbers/booleans, others stay text.
-        expected=workspace[key].reset_index(drop=True).astype(object).map(cell_text)
-        actual=saved[key].reset_index(drop=True).astype(object).map(cell_text)
+        expected=workspace[key].reset_index(drop=True).astype(object).map(cell_key)
+        actual=saved[key].reset_index(drop=True).astype(object).map(cell_key)
         if list(expected.columns)!=list(actual.columns) or not expected.equals(actual):
             raise SheetsError('저장 후 '+key+' 내용이 일치하지 않습니다. 원본 백업을 보존하세요')
     return observed_token

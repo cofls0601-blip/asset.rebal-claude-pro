@@ -5,16 +5,21 @@ const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
 let failTab = null;
+let mangle = null; // {from,to}: a cell the sheet changes on its own, to test the error detail
 class Range {
   constructor(tab,r,c,rows=1,cols=1) { Object.assign(this,{tab,r,c,rows,cols}); }
   getValue() { return this.getValues()[0][0]; }
   getValues() { return Array.from({length:this.rows},(_,i)=>Array.from({length:this.cols},(_,j)=>this.tab.data[this.r-1+i]?.[this.c-1+j] ?? '')); }
   setValue(v) { return this.setValues([[v]]); }
-  setNumberFormat() { return this; }
+  setNumberFormat(f) { this.fmt=f; return this; }
   setValues(values) {
     if(failTab===this.tab.name) { failTab=null; throw new Error('injected write failure'); }
     values.forEach((row,i)=>row.forEach((v,j)=>{
       this.tab.data[this.r-1+i] ||= [];
+      // Like Google Sheets: plain-text ('@') cells keep numbers and booleans as text.
+      if(this.fmt==='@' && typeof v==='number') v=String(v);
+      if(this.fmt==='@' && typeof v==='boolean') v=v?'TRUE':'FALSE';
+      if(mangle && v===mangle.from){ v=mangle.to; mangle=null; }
       this.tab.data[this.r-1+i][this.c-1+j] = typeof v==='string' && v.startsWith("'=") ? v.slice(1) : v;
     }));
     return this;
@@ -63,7 +68,7 @@ const second=structuredClone(first);second.request_id='b'.repeat(64);
 assert.equal(call(second).error,'conflict');
 second.expected_token=saved.token;second.workspace.tables.holdings[0].shares=20;
 failTab='Actions';assert.equal(call(second).ok,false);
-assert.equal(call({action:'load'}).workspace.tables.holdings[0].shares,10);
+assert.equal(Number(call({action:'load'}).workspace.tables.holdings[0].shares),10);
 assert.equal(call(second).ok,true);
 // A manual edit changes the token and is not overwritten by a stale session.
 tabs.get('Holdings').data[1][2]=25;
@@ -78,11 +83,26 @@ assert.equal(pendingReport.state,'pending');
 assert.equal(pendingReport.recovery,'valid');
 assert.equal(pendingReport.current_matches_backup,false);
 assert.equal(tabs.get('Holdings').data[1][2],999); // Diagnosis must not change the source.
-assert.equal(call({action:'load'}).workspace.tables.holdings[0].shares,25);
+assert.equal(Number(call({action:'load'}).workspace.tables.holdings[0].shares),25);
 tabs.get('_RebalanceRecovery').data=[['not-json']];
 context.writeState(spreadsheet,{pending:'incomplete'});
 const corruptReport=context.diagnoseRecovery();
 assert.equal(corruptReport.recovery,'invalid_json');
 assert.equal(call({action:'load'}).error,'recovery_required');
-console.log('Apps Script contract: auth, save, replay, conflict, rollback, recovery passed');
+// Numbers and booleans sent as such come back as text and still count as saved.
+tabs.get('_RebalanceRecovery').data=[];context.writeState(spreadsheet,{});
+const fresh=call({action:'load'});const typed=structuredClone(fresh.workspace);
+typed.columns.strategies=['code','active','target'];typed.tables.strategies=[{code:'GSM',active:true,target:12.5}];
+const ok=call({action:'save',workspace:typed,expected_token:fresh.token,request_id:'c'.repeat(64)});
+assert.equal(ok.ok,true,JSON.stringify(ok));
+assert.equal(call({action:'load'}).workspace.tables.strategies[0].active,'TRUE');
+// A cell the sheet really changes is reported by tab, row and column, without its value.
+mangle={from:'GSM',to:'GSMX'};
+const typed2=structuredClone(typed);typed2.tables.strategies[0].target=20;
+const bad=call({action:'save',workspace:typed2,expected_token:ok.token,request_id:'d'.repeat(64)});mangle=null;
+assert.equal(bad.error,'save_failed_retry');
+assert.deepEqual(bad.detail,{stage:'verify',table:'Strategies',row:2,column:'code',sent:'text',sheet:'text'});
+assert.ok(!JSON.stringify(bad).includes('GSM'));
+assert.equal(Number(call({action:'load'}).workspace.tables.strategies[0].target),12.5); // rolled back
+console.log('Apps Script contract: auth, save, replay, conflict, rollback, recovery, plain-text read-back, error detail passed');
 
