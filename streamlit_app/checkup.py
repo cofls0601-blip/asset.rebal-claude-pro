@@ -33,6 +33,7 @@ def describe(code,params):
     if code=='EM':
         if p.get('mode')=='kr_half':return f'국내 주식 {p.get("kr_share",50):g}% + S&P500. KODEX 200이 10개월 평균선 아래면 국내 몫 절반을 현금'
         if 'max_pct' in p:return f'매년 {p.get("month",12)}월, 한 종목이 계좌의 {p["max_pct"]:g}%를 넘으면 넘는 만큼 줄임'
+        return '지금은 보유만 · 2027 전략 템플릿을 적용하면 국내 주식 50% 절반 필터 + S&P500'
     return '규칙 없음 · 보유만 (월말 리밸런싱에 나오지 않음)'
 
 

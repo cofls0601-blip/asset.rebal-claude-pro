@@ -50,7 +50,10 @@ def apply_template(holdings, strategies, versions, template):
                 archived.append({**conf[gone].iloc[0].to_dict(), "archived_at": now})
                 conf.loc[gone, "active"] = False
                 conf.loc[gone, "change_note"] = f"{template['version']}: {code}로 교체"
-        row = {"code": code, "account": s["account"], "description": s["description"], "dynamic": s["rule"] in ("gsm", "isa_trend", "daa", "kr_half"),
+        # Keep the account name the user already uses (e.g. 「하나」); the template name is only for new accounts.
+        mine = h.strategy.eq(code)
+        account = str(h.loc[mine, "account"].iloc[0]) if mine.any() else s["account"]
+        row = {"code": code, "account": account, "description": s["description"], "dynamic": s["rule"] in ("gsm", "isa_trend", "daa", "kr_half"),
                "active": True, "annual_limit": 0.0, "rule": s["rule"], "params_json": json.dumps(s.get("params", {}), ensure_ascii=False),
                "version": template["version"], "effective_date": template["effective_date"], "source": template.get("source", ""),
                "change_note": template["name"], "tolerance_pct": 0.0, "fractional_us": False, "cash_reserve": 0.0}
@@ -65,10 +68,6 @@ def apply_template(holdings, strategies, versions, template):
         else:
             conf = pd.concat([conf, pd.DataFrame([row])], ignore_index=True)
             changes.append({"전략": code, "항목": "전략표", "내용": "새 전략 추가"})
-        mine = h.strategy.eq(code)
-        if mine.any() and (h.loc[mine, "account"] != s["account"]).any():
-            h.loc[mine, "account"] = s["account"]
-            changes.append({"전략": code, "항목": "계좌", "내용": f"계좌명을 {s['account']}(으)로"})
         listed = set()
         for item in s["holdings"]:
             ticker = str(item["ticker"]).upper()
@@ -80,7 +79,7 @@ def apply_template(holdings, strategies, versions, template):
                 if item.get("target_pct") is not None:
                     h.loc[hit, "target_pct"] = float(item["target_pct"])
             else:
-                h = pd.concat([h, pd.DataFrame([{"strategy": code, "account": s["account"], "ticker": ticker, "name": item["name"],
+                h = pd.concat([h, pd.DataFrame([{"strategy": code, "account": account, "ticker": ticker, "name": item["name"],
                                                  "market": item["market"], "category": item["category"], "role": item["role"],
                                                  "target_pct": float(item.get("target_pct") or 0), "shares": 0.0}])], ignore_index=True)
                 changes.append({"전략": code, "항목": "종목 추가", "내용": f"{item['name']} ({ticker}) · 수량 0"})

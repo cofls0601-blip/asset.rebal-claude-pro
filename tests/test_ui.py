@@ -135,4 +135,16 @@ class UITests(unittest.TestCase):
   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[70.,30.]);self.assertEqual(at.session_state['holdings'].role.iloc[0],'레버리지')
   self.assertFalse(any('130%' in e.value for e in at.error))
 
+ def test_checkup_renames_codes_but_keeps_account_names(self):
+  at=self.start()
+  h=pd.DataFrame([dict(strategy='EM',account='삼성 소액',ticker='005930',name='삼성전자',market='KR',category='신흥국 주식',role='',target_pct=100.,shares=1.),
+                  dict(strategy='HANA',account='하나',ticker='CASH',name='현금',market='KR',category='현금',role='현금',target_pct=100.,shares=0.)])
+  at.session_state['holdings']=m.validate_holdings(h);at.run()
+  at.selectbox(key='rule_forEM').set_value('직접 입력(규칙 없음)').run();at.text_input(key='rule_textEM').set_value('samsung').run()
+  next(b for b in at.button if b.label=='EM → SAMSUNG로 바꾸기').click().run();self.assertFalse(at.exception)
+  sb=at.selectbox(key='rule_forHANA');sb.select_index([o.split(' · ')[0] for o in sb.options].index('EM')).run()  # options show 'EM · 규칙 설명'
+  next(b for b in at.button if b.label=='HANA → EM로 바꾸기').click().run();self.assertFalse(at.exception)
+  got=at.session_state['holdings'].set_index('strategy').account.to_dict()
+  self.assertEqual(got,{'SAMSUNG':'삼성 소액','EM':'하나'})
+
 if __name__=='__main__':unittest.main()

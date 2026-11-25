@@ -67,5 +67,13 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(float(em.set_index("ticker").loc["005930", "shares"]), 5)
 
 
+    def test_existing_account_name_is_kept(self):
+        h, s, v = workspace()
+        h.loc[h.strategy == "EM", "account"] = "하나"
+        nh, ns, *_ = apply_template(h, s, v, self.t)
+        self.assertEqual(set(nh.loc[nh.strategy == "EM", "account"]), {"하나"})   # new SPY row too
+        self.assertEqual(ns.set_index("code").loc["EM", "account"], "하나")
+
+
 if __name__ == "__main__":
     unittest.main()

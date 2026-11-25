@@ -17,7 +17,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2026-11-25 · 계좌 점검'
+APP_VERSION='2026-11-25 · 계좌 점검(코드 바꾸기)'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -382,10 +382,14 @@ elif page=='설정':
                                 st.session_state.demo=False;install({'holdings':m.validate_holdings(updated)});error=persist()
                                 st.session_state.notice=f'{r["code"]} 계좌를 고쳤습니다.'+(f' (Sheets 저장 실패: {error})' if error else '');st.rerun()
                             except DataError as e:st.error(str(e))
-                    if not r['judged'] and free:
-                        new=st.selectbox('이 계좌에 걸 규칙(전략 코드 바꾸기)',['그대로']+free,key='rule_for'+r['code'],format_func=lambda c:c if c=='그대로' else f'{c} · {checkup.describe(c,checkup.params_of(st.session_state.strategies,c))}')
+                    if not r['judged']:
+                        st.caption('전략 코드 바꾸기 · 계좌 이름은 그대로 두고 코드만 바꿉니다. 규칙은 코드로 정해집니다(예: EM = 2027 일반계좌 규칙).')
+                        labels=[f'{c} · {checkup.describe(c,checkup.params_of(st.session_state.strategies,c))}' for c in free]
+                        new=st.selectbox('바꿀 코드',['그대로']+labels+['직접 입력(규칙 없음)'],key='rule_for'+r['code']).split(' · ')[0]
+                        if new=='직접 입력(규칙 없음)':new=st.text_input('새 코드(영문, 예: SAMSUNG)',key='rule_text'+r['code']).strip().upper() or '그대로'
                         if new!='그대로' and st.button(f'{r["code"]} → {new}로 바꾸기',key='rename'+r['code']):
-                            try:apply(m.change_strategy(ws(),r['code'],new,str(r['account']),''),f'{r["code"]}를 {new}로 바꿨습니다. 과거 기록은 그대로입니다.')
+                            conf=st.session_state.strategies;desc=conf.loc[conf.code.eq(r['code']),'description']
+                            try:apply(m.change_strategy(ws(),r['code'],new,str(r['account']),str(desc.iloc[0]) if not desc.empty else ''),f'{r["code"]}를 {new}로 바꿨습니다. 계좌 이름과 과거 기록은 그대로입니다.')
                             except DataError as e:st.error(str(e))
     with tabs[1]:
         with st.expander('새 전략 추가',expanded=st.session_state.holdings.empty):
