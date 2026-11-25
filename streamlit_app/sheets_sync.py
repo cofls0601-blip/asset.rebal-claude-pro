@@ -1,6 +1,7 @@
 """Authenticated Apps Script transport; no secrets in URLs or exception messages."""
 import hashlib
 import json
+import math
 import re
 import requests
 from streamlit_app.data import DataError
@@ -47,20 +48,21 @@ def load_workspace(url,secret,*,transport=None):
     return workspace,data['token']
 
 
-def sheet_safe(value):
-    """Google Sheets keeps 15 significant digits; longer floats (e.g. raw prices 553.6400146484375)
-    come back changed, the Apps Script read-back check fails and the save is rolled back."""
-    if isinstance(value,float):return float(f'{value:.12g}')
-    if isinstance(value,dict):return {k:sheet_safe(v) for k,v in value.items()}
-    if isinstance(value,list):return [sheet_safe(v) for v in value]
-    return value
+def cell_text(value):
+    """The exact text a cell holds. The Apps Script formats every ledger cell as plain text, so the sheet
+    gives numbers and TRUE/FALSE back as text; it then compares that with what was sent and rolls the save
+    back on any difference ('save_failed_retry'). Sending text it will store unchanged avoids that."""
+    if value is None or (isinstance(value,float) and math.isnan(value)):return ''
+    if isinstance(value,bool):return 'TRUE' if value else 'FALSE'
+    if isinstance(value,float):return str(int(value)) if value.is_integer() and abs(value)<1e15 else f'{value:.12g}'
+    return str(value)
 
 
 def save_workspace(url,secret,workspace,token,*,transport=None):
     if not token:raise SheetsError('저장하기 전에 Sheets 원장을 읽어야 합니다')
     payload=json.loads(backup_bytes(workspace))
     payload.pop('drafts',None)
-    payload['tables']=sheet_safe(payload['tables'])
+    payload['tables']={k:[{c:cell_text(v) for c,v in row.items()} for row in rows] for k,rows in payload['tables'].items()}
     encoded=json.dumps(payload,sort_keys=True,ensure_ascii=False,separators=(',',':'))
     if len(encoded.encode())>5_000_000:raise SheetsError('한 번에 5MB까지 저장할 수 있습니다. 전체 백업으로 기록을 보존하세요')
     request_id=hashlib.sha256((token+encoded).encode()).hexdigest()
@@ -72,13 +74,10 @@ def save_workspace(url,secret,workspace,token,*,transport=None):
     if observed_token!=result['token']:
         raise SheetsError('저장 후 시트가 다시 변경되었습니다. 현재 작업을 백업하고 최신 자료를 읽으세요')
     for key in TABLES:
-        expected=workspace[key].fillna('').astype(str)
-        actual=saved[key].fillna('').astype(str)
-        # Numeric type normalization may turn 1 into 1.0; compare canonical JSON via pandas.
-        try:
-            import pandas as pd
-            pd.testing.assert_frame_equal(workspace[key].reset_index(drop=True),saved[key].reset_index(drop=True),check_dtype=False,check_index_type=False,check_exact=False)
-        except AssertionError:
-            if not expected.equals(actual):raise SheetsError('저장 후 '+key+' 내용이 일치하지 않습니다. 원본 백업을 보존하세요')
+        # Compare cell texts: loading turns some text back into numbers/booleans, others stay text.
+        expected=workspace[key].reset_index(drop=True).astype(object).map(cell_text)
+        actual=saved[key].reset_index(drop=True).astype(object).map(cell_text)
+        if list(expected.columns)!=list(actual.columns) or not expected.equals(actual):
+            raise SheetsError('저장 후 '+key+' 내용이 일치하지 않습니다. 원본 백업을 보존하세요')
     return observed_token
 

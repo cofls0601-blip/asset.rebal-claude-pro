@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 import requests
+import pandas as pd
 from streamlit_app.sheets_sync import load_workspace, save_workspace, SheetsError
 from streamlit_app.ledger import backup_bytes, empty_workspace, parse_table
 from streamlit_app.data import normalize_holdings
@@ -75,23 +76,29 @@ if __name__=='__main__':unittest.main()
 
 
 
-class SheetPrecisionTests(unittest.TestCase):
-    def test_long_floats_survive_a_15_digit_sheet(self):
-        """Mimic Apps Script: store numbers at 15 significant digits, then refuse the save if the read-back differs."""
+class PlainTextSheetTests(unittest.TestCase):
+    """Mimic the real sheet: cells are formatted as plain text, so numbers and booleans come back as text,
+    and the Apps Script rolls the save back when the read-back differs from what was sent."""
+    def sheet(self,v):
+        if isinstance(v,bool):return 'TRUE' if v else 'FALSE'
+        if isinstance(v,float):return str(int(v)) if v.is_integer() else repr(v)
+        if isinstance(v,int):return str(v)
+        if isinstance(v,dict):return {k:self.sheet(x) for k,x in v.items()}
+        if isinstance(v,list):return [self.sheet(x) for x in v]
+        return v
+
+    def test_save_survives_a_plain_text_sheet(self):
         w=make_workspace();w['holdings']['shares']=w['holdings']['shares'].astype(float)
-        w['holdings'].loc[w['holdings'].ticker.eq('CASH'),'shares']=12345678.123456789  # 원화 현금이 체결 후 소수점까지 남은 경우: 18자리
-        t=Transport(w)
-        def sheet(v):
-            if isinstance(v,float):return float(f'{v:.15g}')
-            if isinstance(v,dict):return {k:sheet(x) for k,x in v.items()}
-            if isinstance(v,list):return [sheet(x) for x in v]
-            return v
-        original=t.post
+        w['holdings'].loc[w['holdings'].ticker.eq('CASH'),'shares']=12345678.123456789
+        w['snapshots']=pd.DataFrame([dict(date='2026-11-25',strategy='GSM',value=1234.5,revision=1)]).reindex(columns=w['snapshots'].columns)
+        t=Transport(empty_workspace());original=t.post
         def post(url,**kwargs):
             body=kwargs['json']
-            if body['action']=='save' and sheet(body['workspace'])!=body['workspace']:
-                return Mock(status_code=200,raise_for_status=lambda:None,json=lambda:{'ok':False,'error':'save_failed_retry'})
+            if body['action']=='save' and self.sheet(body['workspace']['tables'])!=body['workspace']['tables']:
+                return Mock(raise_for_status=lambda:None,json=lambda:{'ok':False,'error':'save_failed_retry'})
             return original(url,**kwargs)
-        t2=Mock(post=post)
-        token=save_workspace(URL,SECRET,w,'base',transport=t2)
-        self.assertTrue(token)
+        self.assertEqual(save_workspace(URL,SECRET,w,'base',transport=Mock(post=post)),'saved')
+        restored,_=load_workspace(URL,SECRET,transport=t)
+        self.assertEqual(restored['holdings'].ticker.iloc[0],w['holdings'].ticker.iloc[0])
+        self.assertAlmostEqual(float(restored['holdings'].loc[restored['holdings'].ticker.eq('CASH'),'shares'].iloc[0]),12345678.1235,places=3)
+        self.assertTrue(bool(restored['strategies'].active.iloc[0]))
