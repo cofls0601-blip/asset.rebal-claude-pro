@@ -49,5 +49,5 @@ def apply_fill(holdings,code,ticker,side,shares,price):
     cash=out.strategy.eq(code)&out.ticker.eq('CASH')
     if cash.any():
         amount=float(shares)*float(price)
-        out.loc[cash,'shares']=max(0.,float(out.loc[cash,'shares'].iloc[0])+(amount if side=='매도' else -amount))
+        out.loc[cash,'shares']=max(0.,round(float(out.loc[cash,'shares'].iloc[0])+(amount if side=='매도' else -amount)))  # whole won
     return out,before,after

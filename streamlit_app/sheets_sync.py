@@ -47,10 +47,20 @@ def load_workspace(url,secret,*,transport=None):
     return workspace,data['token']
 
 
+def sheet_safe(value):
+    """Google Sheets keeps 15 significant digits; longer floats (e.g. raw prices 553.6400146484375)
+    come back changed, the Apps Script read-back check fails and the save is rolled back."""
+    if isinstance(value,float):return float(f'{value:.12g}')
+    if isinstance(value,dict):return {k:sheet_safe(v) for k,v in value.items()}
+    if isinstance(value,list):return [sheet_safe(v) for v in value]
+    return value
+
+
 def save_workspace(url,secret,workspace,token,*,transport=None):
     if not token:raise SheetsError('저장하기 전에 Sheets 원장을 읽어야 합니다')
     payload=json.loads(backup_bytes(workspace))
     payload.pop('drafts',None)
+    payload['tables']=sheet_safe(payload['tables'])
     encoded=json.dumps(payload,sort_keys=True,ensure_ascii=False,separators=(',',':'))
     if len(encoded.encode())>5_000_000:raise SheetsError('한 번에 5MB까지 저장할 수 있습니다. 전체 백업으로 기록을 보존하세요')
     request_id=hashlib.sha256((token+encoded).encode()).hexdigest()

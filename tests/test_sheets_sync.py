@@ -73,3 +73,25 @@ class SheetsTests(unittest.TestCase):
 
 if __name__=='__main__':unittest.main()
 
+
+
+class SheetPrecisionTests(unittest.TestCase):
+    def test_long_floats_survive_a_15_digit_sheet(self):
+        """Mimic Apps Script: store numbers at 15 significant digits, then refuse the save if the read-back differs."""
+        w=make_workspace();w['holdings']['shares']=w['holdings']['shares'].astype(float)
+        w['holdings'].loc[w['holdings'].ticker.eq('CASH'),'shares']=12345678.123456789  # 원화 현금이 체결 후 소수점까지 남은 경우: 18자리
+        t=Transport(w)
+        def sheet(v):
+            if isinstance(v,float):return float(f'{v:.15g}')
+            if isinstance(v,dict):return {k:sheet(x) for k,x in v.items()}
+            if isinstance(v,list):return [sheet(x) for x in v]
+            return v
+        original=t.post
+        def post(url,**kwargs):
+            body=kwargs['json']
+            if body['action']=='save' and sheet(body['workspace'])!=body['workspace']:
+                return Mock(status_code=200,raise_for_status=lambda:None,json=lambda:{'ok':False,'error':'save_failed_retry'})
+            return original(url,**kwargs)
+        t2=Mock(post=post)
+        token=save_workspace(URL,SECRET,w,'base',transport=t2)
+        self.assertTrue(token)
