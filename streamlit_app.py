@@ -17,7 +17,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2026-11-25 · 하나 계좌 코드 KSP'
+APP_VERSION='2026-11-25 · 저장 표시 고침'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -43,8 +43,18 @@ def install(data):
     st.session_state.pop('valued',None);st.session_state.dirty=True
     st.session_state.revision=st.session_state.get('revision',0)+1
 
-def apply(data,message):
-    install(data);st.session_state.notice=message;st.rerun()
+def saved_note(error):
+    """What happened to Sheets after an edit, as a short sentence for the notice."""
+    if error:return f' Sheets 저장 실패: {error}'
+    return ' Sheets에 저장했습니다.' if connected and not st.session_state.demo else ''
+
+def apply(data,message,save=True):
+    """Install an edit and save it to Sheets right away (save=False when the user should check first)."""
+    install(data);error=None
+    if save:
+        with st.spinner('Sheets에 저장하는 중…'):error=persist()
+    elif connected:message+=' 확인한 뒤 사이드바의 「Sheets에 저장」을 누르세요.'
+    st.session_state['notice_error' if error else 'notice']=message+(saved_note(error) if save else '');st.rerun()
 
 if 'holdings' not in st.session_state:
     install(empty_workspace());st.session_state.holdings=load_default_holdings();st.session_state.strategies=normalize_strategies(load_default_strategies())
@@ -119,10 +129,11 @@ with st.sidebar:
     if st.session_state.demo:st.caption('DEMO · 설정에서 실제 전략과 자산을 입력하세요.')
     if st.session_state.dirty:st.caption('● 저장할 변경사항 있음')
     if connected and st.button('Sheets에 저장',disabled=st.session_state.demo,use_container_width=True):
-        try:
-            st.session_state.token=save_workspace(remote['SHEETS_WEBAPP_URL'],remote['SHEETS_SECRET'],ws(),st.session_state.token)
-            st.session_state.dirty=False;st.success('저장·재조회 확인 완료')
-        except DataError as e:st.error(str(e))
+        # Report on the main page: on phones the sidebar closes and a message here goes unseen.
+        with st.spinner('Sheets에 저장하는 중…'):error=persist()
+        if error:st.session_state.notice_error='Sheets 저장 실패: '+error
+        else:st.session_state.notice=f'Sheets에 저장했습니다 ({datetime.now(ZoneInfo("Asia/Seoul")):%H:%M}). 저장 후 다시 읽어 내용이 같은지 확인했습니다.'
+        st.rerun()
     st.download_button('전체 백업 다운로드',backup_bytes(ws()),'rebalance-backup.json','application/json',use_container_width=True)
 
 # Menu sits at the top so it is visible on phones without opening the sidebar.
@@ -138,6 +149,8 @@ if page!='설정' and (page=='월말 리밸런싱' or not st.session_state.demo)
 descriptions={'월말 리밸런싱':'기준일 → 할 일 확인 → 체결 입력 → 마감, 순서대로 진행하세요.','이번달':'총자산과 계좌별 자산을 한눈에 확인하세요. 상세를 누르면 종목이 펼쳐집니다.','월말 점검':'GSM → DAA → ISA → 일반계좌 1 순서로(2026 전략이면 GSM → LAA → SSO → ISA) 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
 st.caption(descriptions[page]+f' · 기준일 {day}')
 if st.session_state.get('notice'):st.success(st.session_state.pop('notice'))
+if st.session_state.get('notice_error'):st.error(st.session_state.pop('notice_error'))
+if connected and st.session_state.get('dirty') and not st.session_state.demo:st.caption('● Sheets에 저장하지 않은 변경이 있습니다 · 사이드바(») 「Sheets에 저장」')
 result=st.session_state.get('valued');view=result['view'] if result and result['date']==str(day) else None
 if page in ['이번달','월말 리밸런싱','월말 점검','리밸런싱','기록']:
     if view is None:st.info('예시(DEMO) 화면입니다. 사이드바(») 「종가 조회」로 가격을 불러오거나, 설정에서 실제 전략과 자산을 입력하세요.')
@@ -353,7 +366,7 @@ elif page=='기록':
     memo=st.text_input('평가 메모')
     if st.button('평가 기록 확정',disabled=view is None):
         try:
-            apply({'snapshots':snapshot_table(view,day,memo)},'평가를 기록했습니다. Sheets에 저장하세요.')
+            apply({'snapshots':snapshot_table(view,day,memo)},'평가를 기록했습니다.')
         except DataError as e:st.error(str(e))
     selected=st.selectbox('내보낼 시트',TABLES);table(st.session_state[selected]);st.code(to_tsv(st.session_state[selected]),language=None)
     st.download_button('CSV 다운로드',to_csv_bytes(st.session_state[selected]),selected+'.csv','text/csv')
@@ -464,7 +477,7 @@ elif page=='설정':
                 if st.button('2027 템플릿 적용',disabled=not ok,type='primary'):
                     h,conf,versions,_=st.session_state.pop('template_preview')
                     st.session_state.demo=False
-                    apply({'holdings':h,'strategies':conf,'strategy_versions':versions},'2027 전략 템플릿을 적용했습니다. Sheets에 저장하세요.')
+                    apply({'holdings':h,'strategies':conf,'strategy_versions':versions},'2027 전략 템플릿을 적용했습니다.')
     with tabs[4]:
         st.caption('기존 Apps Script 연결과 Sheets 저장·충돌 확인 방식은 유지됩니다.')
         if connected and st.button('최신 원장 미리보기'):
@@ -473,14 +486,14 @@ elif page=='설정':
         if st.session_state.get('preview'):
             data,token=st.session_state.preview;table(data['holdings'])
             if st.button('미리 본 원장 적용'):
-                st.session_state.token=token;st.session_state.demo=False;data=st.session_state.pop('preview')[0];apply(data,'원장을 적용했습니다.')
+                st.session_state.token=token;st.session_state.demo=False;data=st.session_state.pop('preview')[0];apply(data,'원장을 적용했습니다.',save=False)
         file=st.file_uploader('보유내역 CSV·TSV',type=['csv','tsv'])
         if file and st.button('보유내역 가져오기'):
-            try:st.session_state.demo=False;apply({'holdings':m.validate_holdings(parse_table(file.getvalue()))},'보유내역을 가져왔습니다.')
+            try:st.session_state.demo=False;apply({'holdings':m.validate_holdings(parse_table(file.getvalue()))},'보유내역을 가져왔습니다.',save=False)
             except DataError as e:st.error(str(e))
         backup=st.file_uploader('전체 백업 JSON',type=['json'])
         if backup and st.button('백업 복원'):
-            try:st.session_state.demo=False;apply(restore_backup(backup.getvalue()),'백업을 복원했습니다.')
+            try:st.session_state.demo=False;apply(restore_backup(backup.getvalue()),'백업을 복원했습니다.',save=False)
             except DataError as e:st.error(str(e))
 
 st.caption(f'앱 버전 {APP_VERSION}')

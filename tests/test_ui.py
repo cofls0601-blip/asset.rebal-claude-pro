@@ -148,4 +148,23 @@ class UITests(unittest.TestCase):
   next(b for b in at.button if b.label=='EM → ETC로 바꾸기').click().run();self.assertFalse(at.exception)  # free-text rename still works
   self.assertIn('ETC',set(at.session_state['holdings'].strategy))
 
+ def test_sheets_save_feedback_on_main_page(self):
+  import hashlib
+  from streamlit_app import sheets_sync
+  from streamlit_app.ledger import empty_workspace
+  from streamlit_app.data import load_default_holdings
+  w=empty_workspace();w['holdings']=load_default_holdings();saves=[]
+  def save(url,secret,workspace,token,**k):saves.append(token);return 'tok'+str(len(saves)+1)
+  with patch.object(sheets_sync,'load_workspace',return_value=(w,'tok1')),patch.object(sheets_sync,'save_workspace',side_effect=save):
+   at=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'streamlit_app.py'))
+   pw='p'*12;at.secrets['SHEETS_WEBAPP_URL']='https://script.google.com/macros/s/x/exec';at.secrets['SHEETS_SECRET']='s'*24;at.secrets['APP_PASSWORD']=pw
+   at.session_state['auth']=hashlib.sha256(pw.encode()).hexdigest();at.run();at.radio(key='page').set_value('설정').run();self.assertFalse(at.exception)
+   self.click(at,'금 현물(g) 항목 추가')  # an edit saves by itself
+   self.assertEqual(saves,['tok1']);self.assertTrue(any('Sheets에 저장했습니다' in x.value for x in at.success))
+   next(b for b in at.sidebar.button if b.label=='Sheets에 저장').click().run();self.assertFalse(at.exception)
+   self.assertEqual(saves,['tok1','tok2']);self.assertTrue(any('Sheets에 저장했습니다 (' in x.value for x in at.success))
+  with patch.object(sheets_sync,'save_workspace',side_effect=sheets_sync.SheetsError('다른 세션 또는 시트에서 자료가 바뀌었습니다')):
+   next(b for b in at.sidebar.button if b.label=='Sheets에 저장').click().run()
+   self.assertTrue(any('Sheets 저장 실패' in x.value for x in at.error))
+
 if __name__=='__main__':unittest.main()
