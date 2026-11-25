@@ -288,11 +288,11 @@
       "account": "금 현물",
       "rule": "hold",
       "params": {},
-      "description": "금 현물 보유. 매매 없음. 국제 금시세(GC=F) 기준 추정, 수량 = g ÷ 31.1035",
+      "description": "금 현물 보유. 매매 없음. 국제 금시세(GC=F) 기준 추정, 수량은 g",
       "holdings": [
         {
-          "ticker": "GC=F",
-          "name": "금 현물 (국제 시세 기준 추정)",
+          "ticker": "GOLD_G",
+          "name": "금 현물 (국제 시세 추정)",
           "market": "US",
           "category": "금",
           "role": "",

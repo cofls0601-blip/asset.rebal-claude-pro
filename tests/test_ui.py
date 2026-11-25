@@ -24,7 +24,7 @@ class UITests(unittest.TestCase):
   self.click(at,'전략에 종목 추가');self.assertIn('069500',at.session_state['holdings'].ticker.tolist())
   self.text(at,'티커 또는 종목명 검색','OTHER');at.run();self.assertEqual(at.selectbox(key='settingsDEMOchoice').value,-1)
   # Simulate actual data-editor edit events and submit its form.
-  editors=at.dataframe;self.assertTrue(editors)
+  editors=[e for e in at.dataframe if '보유수량' in list(e.value.columns)];self.assertTrue(editors)  # the holdings editor, not the check-up one
   editor_key=editors[0].proto.id.split('-',2)[-1]
   # Streamlit's editor state uses the generated element id in AppTest.
   at.session_state[editors[0].proto.id]={'edited_rows':{0:{'보유수량':5,'목표비중 (%)':40}},'added_rows':[],'deleted_rows':[]}
@@ -122,5 +122,17 @@ class UITests(unittest.TestCase):
   self.assertAlmostEqual(daa['133690'],100/3,places=3);self.assertEqual(daa['476760'],0.)
   isa=at.session_state['holdings'].query("strategy=='ISA'").set_index('ticker').target_pct
   self.assertEqual(isa['225040'],100.)
+
+ def test_account_checkup_flags_and_fixes_target_sum(self):
+  at=self.start()
+  h=pd.DataFrame([dict(strategy='SSO',account='일반계좌 2',ticker='SSO',name='ProShares Ultra S&P500',market='US',category='선진국 주식',role='-10% 트리거',target_pct=100.,shares=1.),
+                  dict(strategy='SSO',account='일반계좌 2',ticker='CASH',name='현금',market='KR',category='현금',role='현금',target_pct=30.,shares=0.)])
+  at.session_state['holdings']=m.validate_holdings(h);at.run();self.assertFalse(at.exception)
+  self.assertTrue(any('130%' in e.value for e in at.error));self.assertTrue(any('「-10% 트리거」' in w.value for w in at.warning))
+  editor=next(e for e in at.dataframe if '역할' in list(e.value.columns))
+  at.session_state[editor.proto.id]={'edited_rows':{0:{'역할':'레버리지','목표 (%)':70}},'added_rows':[],'deleted_rows':[]}
+  next(b for b in at.button if b.label=='저장').click().run();self.assertFalse(at.exception)
+  self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[70.,30.]);self.assertEqual(at.session_state['holdings'].role.iloc[0],'레버리지')
+  self.assertFalse(any('130%' in e.value for e in at.error))
 
 if __name__=='__main__':unittest.main()

@@ -9,6 +9,7 @@ import plotly.express as px
 import streamlit as st
 from streamlit_app import manual as m
 from streamlit_app import rules
+from streamlit_app import checkup
 from streamlit_app.orders import apply_fill, orders_frame, plan_orders
 from streamlit_app.tables import change_html, portfolio_table, weight_html
 from streamlit_app.data import DataError, load_default_holdings, load_default_strategies, normalize_strategies, to_csv_bytes, to_tsv
@@ -16,7 +17,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2026-11-25 · 브랜치 통합(2027 전략 + 일반계좌 2 VOO)'
+APP_VERSION='2026-11-25 · 계좌 점검'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -144,6 +145,8 @@ if page in ['이번달','월말 리밸런싱','월말 점검','리밸런싱','�
         for error in result['errors']:st.warning(error)
 
 if page=='이번달' and view is not None:
+    problems=[r['code'] for r in checkup.check(st.session_state.holdings,st.session_state.strategies,view) if r['status']=='문제']
+    if problems:st.warning(f'점검이 필요한 계좌 {len(problems)}개({", ".join(problems)}) · 설정 › 계좌 점검에서 확인하세요.')
     complete=view.value.notna().all();record=m.last_record(st.session_state.snapshots,day)
     prev=view.prev_value.sum() if 'prev_value' in view and view.prev_value.notna().all() else None
     total=f'{view.value.sum():,.0f}원' if complete else '조회 확인 필요'
@@ -356,8 +359,35 @@ elif page=='기록':
     st.download_button('CSV 다운로드',to_csv_bytes(st.session_state[selected]),selected+'.csv','text/csv')
 
 elif page=='설정':
-    tabs=st.tabs(['전략 관리','종목·수량·비중','2027 전략 템플릿','원장·백업'])
+    tabs=st.tabs(['계좌 점검','전략 관리','종목·수량·비중','2027 전략 템플릿','원장·백업'])
     with tabs[0]:
+        st.caption('계좌마다 어떤 규칙이 걸리는지, 주문이나 판정을 틀리게 만들 칸이 있는지 보여 줍니다. 「고치기」에서 역할과 목표 비중을 바로 고칠 수 있습니다.')
+        results=checkup.check(st.session_state.holdings,st.session_state.strategies,view)
+        if view is None:st.caption('가격을 불러오면 「가격 없음」과 「목표와 실제 차이」도 점검합니다.')
+        free=[c for c in rules.ORDER if c not in set(st.session_state.holdings.strategy)]
+        for r in results:
+            badge={'문제':'blocked','확인':'judged','정상':'skipped'}[r['status']]
+            with st.container(border=True):
+                st.markdown(f'<div class="check-card {badge}"><div class="card-top"><h3>{escape(str(r["account"]))}</h3><span class="check-badge">{escape(r["code"])} · {r["status"]}</span></div><p class="check-rule">{"⚙️ " if r["judged"] else ""}{escape(r["rule"])}</p></div>',unsafe_allow_html=True)
+                for level,text in r['issues']:(st.error if level=='문제' else st.warning)(text)
+                with st.expander('고치기'):
+                    h=st.session_state.holdings;sub=h[h.strategy.eq(r['code'])]
+                    shown=sub[['name','ticker','role','target_pct']].rename(columns={'name':'종목','ticker':'티커','role':'역할','target_pct':'목표 (%)'})
+                    with st.form('fix'+r['code']+str(st.session_state.revision)):
+                        edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['종목','티커'],column_config={'역할':st.column_config.SelectboxColumn(options=list(dict.fromkeys(checkup.ROLES+sub.role.tolist()))),'목표 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%g')})
+                        st.caption(f'목표 합계 {sub.target_pct.sum():g}% → 100%가 되게 맞추세요. 역할은 판정에 쓰는 값(현금·필터·레버리지)만 남기고 나머지는 비우세요.')
+                        if st.form_submit_button('저장',use_container_width=True):
+                            try:
+                                updated=h.copy();updated.loc[sub.index,['role','target_pct']]=edited[['역할','목표 (%)']].to_numpy()
+                                st.session_state.demo=False;install({'holdings':m.validate_holdings(updated)});error=persist()
+                                st.session_state.notice=f'{r["code"]} 계좌를 고쳤습니다.'+(f' (Sheets 저장 실패: {error})' if error else '');st.rerun()
+                            except DataError as e:st.error(str(e))
+                    if not r['judged'] and free:
+                        new=st.selectbox('이 계좌에 걸 규칙(전략 코드 바꾸기)',['그대로']+free,key='rule_for'+r['code'],format_func=lambda c:c if c=='그대로' else f'{c} · {checkup.describe(c,checkup.params_of(st.session_state.strategies,c))}')
+                        if new!='그대로' and st.button(f'{r["code"]} → {new}로 바꾸기',key='rename'+r['code']):
+                            try:apply(m.change_strategy(ws(),r['code'],new,str(r['account']),''),f'{r["code"]}를 {new}로 바꿨습니다. 과거 기록은 그대로입니다.')
+                            except DataError as e:st.error(str(e))
+    with tabs[1]:
         with st.expander('새 전략 추가',expanded=st.session_state.holdings.empty):
             with st.form('new_strategy'):
                 name=st.text_input('전략명');account=st.text_input('계좌명');description=st.text_input('설명')
@@ -380,7 +410,7 @@ elif page=='설정':
             if st.button('전략 삭제',disabled=not confirm,key='delete_strategy'+code):
                 try:apply(m.delete_strategy(ws(),code),'전략을 삭제했습니다.')
                 except DataError as e:st.error(str(e))
-    with tabs[1]:
+    with tabs[2]:
         h=st.session_state.holdings;codes=h.strategy.drop_duplicates().tolist()
         if not codes:st.info('전략 관리에서 전략을 먼저 추가하세요.')
         else:
@@ -413,7 +443,7 @@ elif page=='설정':
                 if st.button('종목 삭제',key='delete_asset'+code):
                     try:apply({'holdings':m.delete_asset(h,code,ticker)},'종목을 삭제했습니다.')
                     except DataError as e:st.error(str(e))
-    with tabs[2]:
+    with tabs[3]:
         try:template=load_template()
         except (OSError,ValueError,DataError) as e:template=None;st.error(f'템플릿을 읽지 못했습니다: {e}')
         if template:
@@ -431,7 +461,7 @@ elif page=='설정':
                     h,conf,versions,_=st.session_state.pop('template_preview')
                     st.session_state.demo=False
                     apply({'holdings':h,'strategies':conf,'strategy_versions':versions},'2027 전략 템플릿을 적용했습니다. Sheets에 저장하세요.')
-    with tabs[3]:
+    with tabs[4]:
         st.caption('기존 Apps Script 연결과 Sheets 저장·충돌 확인 방식은 유지됩니다.')
         if connected and st.button('최신 원장 미리보기'):
             try:st.session_state.preview=load_workspace(remote['SHEETS_WEBAPP_URL'],remote['SHEETS_SECRET'])

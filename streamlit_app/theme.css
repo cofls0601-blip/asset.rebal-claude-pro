@@ -108,3 +108,4 @@ h3{font-size:18px!important;font-weight:600!important}
 .st-key-page [data-testid="stRadioOption"] div:has(+ [data-testid="stMarkdownContainer"]){display:none}
 @media(max-width:767px){.block-container{padding-top:3.6rem!important}}
 .st-key-page [role="radiogroup"] p{font-size:14px!important}
+.check-rule{font-size:14px!important;color:var(--desk-text);margin:8px 0 2px;overflow-wrap:anywhere}
