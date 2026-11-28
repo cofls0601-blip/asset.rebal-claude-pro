@@ -73,3 +73,18 @@ def check(holdings,strategies=None,view=None,gap_pct=5.):
         out.append(dict(code=code,account=sub.account.iloc[0],rule=describe(code,p),judged=judged(code,p),status=status,issues=issues))
     order={'문제':0,'확인':1,'정상':2}
     return sorted(out,key=lambda r:order[r['status']])
+
+
+def short_title(code,params):
+    """A few words for the strategy card title (design 2.0); the full rule sits under it."""
+    p=params or {}
+    if code=='GSM':return '좋은 것 하나에 80%' if int(p.get('top',1))==1 else f'좋은 것 {int(p["top"])}개에 80%'
+    if code=='DAA':return '카나리아로 공격·방어 전환'
+    if code=='LAA':return '6자산 고정 + 필터 2개 · 2027 → DAA'
+    if code=='ISA':return '추세 좋을 때만 2배' if p.get('mode')=='trend' else '떨어질 때 나눠 사기'
+    if code=='SSO':return 'SSO 70 + 하락 때 더 사기 · 2027 → SPX'
+    if code=='KSP':return '국내 반 · 미국 반' if p.get('mode')=='kr_half' else '국내 반 · 미국 반 (2027부터)'
+    if code=='EM' and ('max_pct' in p or p.get('mode')=='kr_half'):return '한 종목 상한 점검'
+    if code=='GOLD':return '금 현물 보유'
+    if code in ('CASH','RESERVE'):return '생활 안정용 현금'
+    return '보유만'

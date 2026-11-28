@@ -6,20 +6,18 @@ from pathlib import Path
 import hashlib
 import hmac
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 from streamlit_app import manual as m
 from streamlit_app import rules
 from streamlit_app import checkup, home, performance, ui
 import plotly.graph_objects as go
-from streamlit_app.orders import apply_fill, orders_frame, plan_orders
-from streamlit_app.tables import change_html, portfolio_table, weight_html
-from streamlit_app.data import DataError, load_default_holdings, load_default_strategies, normalize_strategies, to_csv_bytes, to_tsv
+from streamlit_app.orders import apply_fill, plan_orders
+from streamlit_app.data import DataError, load_default_holdings, load_default_strategies, normalize_strategies, to_csv_bytes
 from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_backup, parse_table
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2026-11-28 · 디자인 2.0 홈·월말 리밸런싱'
+APP_VERSION='2.0 · 2026-11-28'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -141,8 +139,8 @@ with st.sidebar:
     st.download_button('전체 백업 다운로드',backup_bytes(ws()),'rebalance-backup.json','application/json',use_container_width=True)
 
 # Menu sits at the top so it is visible on phones without opening the sidebar.
-page=st.radio('메뉴',['이번달','월말 리밸런싱','월말 점검','리밸런싱','주문안','기록','설정'],horizontal=True,key='page',label_visibility='collapsed')
-REDESIGNED=('이번달','월말 리밸런싱')  # pages already in design 2.0: no big title, own status lines
+page=st.radio('메뉴',['홈','월말 리밸런싱','내 자산'],horizontal=True,key='page',label_visibility='collapsed')
+REDESIGNED=('홈','월말 리밸런싱','내 자산')  # pages already in design 2.0: no big title, own status lines
 if page not in REDESIGNED:
     st.markdown('<div class="eyebrow">YOUR MONTHLY ALLOCATION</div>',unsafe_allow_html=True)
     st.title(page)
@@ -151,7 +149,7 @@ if page=='월말 리밸런싱':
     day=st.session_state.setdefault('rebal_date',today)
 # Prices load by themselves (no button) once real holdings are in; the DEMO workspace waits for the button.
 current=st.session_state.get('valued')
-if page!='설정' and (page=='월말 리밸런싱' or not st.session_state.demo) and (not current or current['date']!=str(day)):
+if (page=='월말 리밸런싱' or not st.session_state.demo) and (not current or current['date']!=str(day)):
     with st.spinner('종가·환율을 불러옵니다…'):refresh(day)
 descriptions={'월말 리밸런싱':'기준일 → 할 일 확인 → 체결 입력 → 마감, 순서대로 진행하세요.','이번달':'총자산과 계좌별 자산을 한눈에 확인하세요. 상세를 누르면 종목이 펼쳐집니다.','월말 점검':'GSM → DAA → ISA → 일반계좌 1 순서로(2026 전략이면 GSM → LAA → SSO → ISA) 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
 if page not in REDESIGNED:st.caption(descriptions[page]+f' · 기준일 {day}')
@@ -159,7 +157,7 @@ if st.session_state.get('notice'):st.success(st.session_state.pop('notice'))
 if st.session_state.get('notice_error'):st.error(st.session_state.pop('notice_error'))
 if connected and st.session_state.get('dirty') and not st.session_state.demo and page not in REDESIGNED:st.caption('● Sheets에 저장하지 않은 변경이 있습니다 · 사이드바(») 「Sheets에 저장」')
 result=st.session_state.get('valued');view=result['view'] if result and result['date']==str(day) else None
-if page in ['이번달','월말 리밸런싱','월말 점검','리밸런싱','기록']:
+if page in ['홈','월말 리밸런싱']:
     if view is None:st.info('예시(DEMO) 화면입니다. 사이드바(») 「종가 조회」로 가격을 불러오거나, 설정에서 실제 전략과 자산을 입력하세요.')
     else:
         for error in result['errors']:st.warning(error)
@@ -187,7 +185,7 @@ def monthly_chart(data,by,year):
         if pd.notna(t):fig.add_annotation(x=label,y=100,yshift=12,text=f'{t/1e8:.2f}',showarrow=False,font=dict(size=10,color='#191F28'))
     return fig
 
-if page=='이번달' and view is not None and st.session_state.get('home_view')=='monthly':
+if page=='홈' and view is not None and st.session_state.get('home_view')=='monthly':
     st.button('← 홈',on_click=home_view,args=('',))
     by=st.radio('묶기',['계좌(전략)별','자산군별'],horizontal=True,key='monthly_by',label_visibility='collapsed')
     data=home.monthly(st.session_state.snapshots,'strategy' if by.startswith('계좌') else 'category')
@@ -209,7 +207,7 @@ if page=='이번달' and view is not None and st.session_state.get('home_view')=
         rows=''.join(f'<li><span><i style="background:{ui.strategy_color(r.key) if by.startswith("계좌") else ui.asset_color(r.key)}"></i>{escape(str(r.account))} <small class="ds-label">{escape(str(r.key)) if by.startswith("계좌") else ""}</small></span><b>{ui.won(r.value,unit=False)} <small class="ds-label">{r.value/total*100:.1f}%</small></b></li>' for r in month.itertuples())
         st.markdown(ui.card(f'<div class="ds-link"><b class="ds-h2">{picked.year}년 {picked.month}월 말</b>{ui.change(total,before,pct=False)}</div>{ui.won_big(total)}<div class="ds-assets" style="grid-template-columns:1fr"><ul>{rows}</ul></div>'),unsafe_allow_html=True)
 
-elif page=='이번달' and view is not None:
+elif page=='홈' and view is not None:
     checks={r['code']:r for r in checkup.check(st.session_state.holdings,st.session_state.strategies,view)}
     # Status line, then at most one alert line.
     saved=st.session_state.get('last_saved')
@@ -403,218 +401,212 @@ elif page=='월말 리밸런싱' and view is not None:
                 st.rerun()
             except DataError as e:st.error(str(e))
 
-elif page=='월말 점검' and view is not None:
-    st.caption('앱은 제안만 합니다. 「목표 비중에 반영」을 누른 전략만 목표 비중이 바뀌고, 매매는 주문안에서 직접 입력합니다.')
-    names=dict(zip(view.ticker,view.name))
-    for d in rules.evaluate(view,day,prices,st.session_state.strategies):
-        tone={'판정':'judged','판정 없음':'skipped','계산 불가':'blocked'}[d['status']]
-        badge='변경 제안' if d['changed'] else ('유지' if d['status']=='판정' else d['status'])
-        with st.container(border=True):
-            st.markdown(f'<div class="check-card {tone}"><div class="card-top"><h3>{escape(d["code"])}</h3><span class="check-badge">{escape(badge)}</span></div><p class="check-headline">{escape(d["headline"])}</p></div>',unsafe_allow_html=True)
-            if d['evidence']:table(pd.DataFrame(d['evidence']))
-            if d['changed']:
-                plan=pd.DataFrame([dict(종목=names.get(t,t),현재=d['current'].get(t,0.),제안=w) for t,w in d['targets'].items()])
-                st.dataframe(plan,hide_index=True,use_container_width=True,column_config={c:st.column_config.NumberColumn(format='%.2f%%') for c in ['현재','제안']})
-                if st.button('목표 비중에 반영',key='apply_rule'+d['code']):
+elif page=='내 자산':
+    def open_fix(code):st.session_state.fix_code=code
+    def pick_account(name):st.session_state.mine_acct=name
+    h=st.session_state.holdings;conf=st.session_state.strategies
+    results=checkup.check(h,conf,view);flagged=[r for r in results if r['status']!='정상']
+    nbad=sum(r['status']=='문제' for r in flagged);nwarn=len(flagged)-nbad
+    # 1. 계좌 점검: one box per flagged account, 「고치기」 opens the editor below.
+    with st.container(key='mine_check'):
+        tags=(ui.tag(f'문제 {nbad}','bad') if nbad else '')+' '+(ui.tag(f'확인 {nwarn}','warn') if nwarn else '')
+        st.markdown(f'<div class="ds-link"><h2 class="ds-h2">계좌 점검</h2><span>{tags if flagged else ui.tag("모두 정상","same")}</span></div>',unsafe_allow_html=True)
+        for r in flagged:
+            first=re.sub(r"\s*\(.*?\)","",re.split(r"\.(?:\s|$)",r['issues'][0][1])[0])
+            rest=''.join(f'<small style="display:block">{escape(t)}</small>' for _,t in r['issues'][1:])
+            st.markdown(f'<div class="ds-alert {"bad" if r["status"]=="문제" else "warn"}" style="margin-bottom:4px">{escape(str(r["account"]))} · {escape(first)}{rest}</div>',unsafe_allow_html=True)
+            st.button('고치기 ›' if r['status']=='문제' else '확인 ›',on_click=open_fix,args=(r['code'],),key='fix_open_'+r['code'])
+        ok=len(results)-len(flagged)
+        if ok:st.markdown(f'<p class="ds-cap">나머지 {ok}개 계좌 · 문제 없음</p>',unsafe_allow_html=True)
+    code=st.session_state.get('fix_code')
+    if code in set(h.strategy):
+        r=next(x for x in results if x['code']==code);sub=h[h.strategy.eq(code)];total=float(sub.target_pct.sum())
+        with st.container(key='fix_card'):
+            st.markdown(f'<div class="ds-link"><span><b class="ds-h2">{escape(str(r["account"]))}</b> {ui.chip(code)}</span>{ui.tag(r["status"],{"문제":"bad","확인":"warn"}.get(r["status"],"same"))}</div><p class="ds-cap">{escape(r["rule"])}</p>',unsafe_allow_html=True)
+            if abs(total-100)>.01:st.markdown(f'<div class="ds-alert bad">목표 합계 {total:g}% → {abs(100-total):g}% {"모자라요" if total<100 else "넘쳐요"}</div>',unsafe_allow_html=True)
+            shown=sub[['name','ticker','role','target_pct']].rename(columns={'name':'종목','ticker':'티커','role':'역할','target_pct':'목표 (%)'})
+            with st.form('fix'+code+str(st.session_state.revision)):
+                edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['종목','티커'],column_config={'역할':st.column_config.SelectboxColumn(options=list(dict.fromkeys(checkup.ROLES+sub.role.tolist()))),'목표 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%g')})
+                st.markdown(ui.bar_row('합계','역할은 판정에 쓰는 값(현금·필터·레버리지)만',total,100,'#E42939' if abs(total-100)>.01 else '#12A16B'),unsafe_allow_html=True)
+                a,b=st.columns([1,2])
+                cancel=a.form_submit_button('취소',use_container_width=True);save=b.form_submit_button('고쳐서 저장',type='primary',use_container_width=True)
+                if cancel:st.session_state.fix_code=None;st.rerun()
+                if save:
                     try:
-                        install({'holdings':m.validate_holdings(rules.apply_targets(st.session_state.holdings,d['code'],d['targets']))});refresh(day)
-                        st.session_state.notice=f'{d["code"]} 목표 비중을 제안대로 바꿨습니다. 주문안에서 매매 수량을 입력하세요.';st.rerun()
+                        updated=h.copy();updated.loc[sub.index,['role','target_pct']]=edited[['역할','목표 (%)']].to_numpy()
+                        st.session_state.demo=False;st.session_state.fix_code=None
+                        apply({'holdings':m.validate_holdings(updated)},f'{r["account"]} 계좌를 고쳤어요.')
                     except DataError as e:st.error(str(e))
-
-elif page=='리밸런싱' and view is not None:
-    st.caption('현재 비중: 🔴 목표 초과 · 🟢 목표와 같음 · 🔵 목표 미달 (소수점 둘째 자리 기준)')
-    st.caption('SMA와 수익률: 비수정 월말 종가 기준이며, 기준일 종가를 그달의 월말 종가로 씁니다. 평가액은 원화 환산, 종가·SMA는 종목의 거래 통화입니다.')
-    for code,sub in view.groupby('strategy',sort=False):
-        st.subheader(code)
-        shown=sub[['strategy','ticker','name','shares','market','close','sma10','value','weight','target_pct','return12']].copy()
-        shown.market=shown.market.map({'KR':'원화','US':'달러'})
-        shown.columns=['전략명','티커','종목명','보유 수량','원화/달러','종가','10개월 SMA','평가액','현재 비중','목표 비중','12개월 수익률']
-        st.markdown(portfolio_table(sub),unsafe_allow_html=True)
-        st.caption('목표 비중 편집 · 현재 비중과 비교하며 입력하세요.')
-        target_editor=shown[['티커','종목명','현재 비중','목표 비중']].copy()
-        with st.form('plan'+code+str(st.session_state.revision)):
-            edited=st.data_editor(target_editor,hide_index=True,use_container_width=True,disabled=['티커','종목명','현재 비중'],column_config={**price_columns(target_editor.columns),'목표 비중':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%.2f%%'),'현재 비중':st.column_config.NumberColumn(format='%.2f%%'),'12개월 수익률':st.column_config.NumberColumn(format='%.2f%%')})
-            if st.form_submit_button('목표 비중 적용'):
-                try:
-                    values=[m.number(x,'목표비중',100) for x in edited['목표 비중']]
-                    if abs(sum(values)-100)>.01:raise DataError('목표 비중 합계가 100%여야 합니다')
-                    h=st.session_state.holdings.copy();mask=h.strategy.eq(code);targets=dict(zip(edited['티커'],values));h.loc[mask,'target_pct']=h.loc[mask,'ticker'].map(targets)
-                    install({'holdings':m.validate_holdings(h)});refresh(day);st.session_state.notice='목표 비중을 적용했습니다.';st.rerun()
-                except DataError as e:st.error(str(e))
-
-elif page=='주문안':
-    st.info('매수는 입력 수량을 더하고, 매도는 뺍니다. 실제 증권 주문을 전송하지 않으며 현금은 자동 정산하지 않습니다.')
-    codes=st.session_state.holdings.strategy.drop_duplicates().tolist()
-    if not codes:st.info('설정에서 전략을 먼저 추가하세요.')
-    for code in codes:
-        st.subheader(code);h=st.session_state.holdings;sub=h[h.strategy.eq(code)&h.ticker.ne('CASH')]
-        source=st.radio('종목 선택',['보유·후보 종목','새 종목'],horizontal=True,key='order_source'+code)
-        if source=='새 종목':
-            asset=picker('order'+code)
-            if st.button('후보로 등록',key='order_add'+code):
-                try:apply({'holdings':m.add_asset(h,code,asset)},'수량 0인 후보로 등록했습니다. 보유·후보 종목에서 선택하세요.')
-                except DataError as e:st.error(str(e))
-        elif sub.empty:st.caption('등록된 종목이 없습니다. 새 종목을 검색해 추가하세요.')
-        else:
-            ticker=st.selectbox('종목',sub.ticker.tolist(),format_func=lambda t:f'{t} · {sub.loc[sub.ticker.eq(t),"name"].iloc[0]}',key='order_ticker'+code)
-            current=float(sub.loc[sub.ticker.eq(ticker),'shares'].iloc[0])
-            quote=view.loc[view.strategy.eq(code)&view.ticker.eq(ticker)] if view is not None else pd.DataFrame()
-            value='—';weight='—'
-            if not quote.empty:
-                r=quote.iloc[0]
-                value='—' if pd.isna(r.value) else f'{r.value:,.0f}원'
-                weight='—' if pd.isna(r.weight) else weight_html(r.weight,r.target_pct)
-            quantity=f'{current:,.4f}'.rstrip('0').rstrip('.')
-            st.markdown(f'<div class="order-summary"><div><small>현재 보유수량</small><b>{quantity}주</b></div><div><small>현재 평가액</small><b>{value}</b></div><div><small>현재 비중 · 전략 내</small><b>{weight}</b></div></div>',unsafe_allow_html=True)
-            if quote.empty:st.caption('종가를 조회하면 평가액과 비중을 표시합니다.')
-            with st.form('order_form'+code):
-                q=st.number_input('매매할 수량',min_value=0.,step=1.,format='%.4f')
-                a,b=st.columns(2);buy=a.form_submit_button('매수',use_container_width=True);sell=b.form_submit_button('매도',use_container_width=True)
-                if buy or sell:
+            if not r['judged']:
+                free=[c for c in rules.ORDER if c not in set(h.strategy)]
+                labels=[f'{c} · {checkup.describe(c,checkup.params_of(conf,c))}' for c in free]
+                new=st.selectbox('전략 코드 바꾸기 (계좌 이름은 그대로)',['그대로']+labels+['직접 입력(규칙 없음)'],key='rule_for'+code).split(' · ')[0]
+                if new=='직접 입력(규칙 없음)':new=st.text_input('새 코드(영문, 예: SAMSUNG)',key='rule_text'+code).strip().upper() or '그대로'
+                if new!='그대로' and st.button(f'{code} → {new}로 바꾸기',key='rename'+code):
+                    desc=conf.loc[conf.code.eq(code),'description'];st.session_state.fix_code=None
+                    try:apply(m.change_strategy(ws(),code,new,str(r['account']),str(desc.iloc[0]) if not desc.empty else ''),f'{code}를 {new}로 바꿨어요. 계좌 이름과 과거 기록은 그대로예요.')
+                    except DataError as e:st.error(str(e))
+    # 2. 전략: judged accounts first, the rest folded.
+    def strategy_row(r):
+        return (f'<div class="ds-strat"><span class="ds-strat-badge" style="background:{ui.strategy_color(r["code"])}">{escape(r["code"])}</span>'
+                f'<span><b>{escape(checkup.short_title(r["code"],checkup.params_of(conf,r["code"])))}</b><small>{escape(r["rule"])}</small></span></div>')
+    main=[r for r in results if r['judged'] or r['code']=='KSP'];others=[r for r in results if r not in main]
+    fold=f'<details><summary class="ds-label">{"·".join(r["code"] for r in others)} 보기</summary>{"".join(strategy_row(r) for r in others)}</details>' if others else ''
+    st.markdown(ui.card(f'<div class="ds-link"><h2>전략</h2><span class="ds-label">계좌 {len(main)} · 보유만 {len(others)}</span></div>{"".join(strategy_row(r) for r in main)}{fold}'),unsafe_allow_html=True)
+    # 3. Account card: quantities per holding, cash amount, save.
+    accounts=list(dict.fromkeys(h.account))
+    if accounts:
+        if st.session_state.get('mine_acct') not in accounts:st.session_state.mine_acct=accounts[0]
+        with st.container(key='mine_acct_card'):
+            acct=st.selectbox('계좌',accounts,key='mine_acct',label_visibility='collapsed')
+            sub=h[h.account.eq(acct)];code=sub.strategy.iloc[0]
+            value=view.loc[view.account.eq(acct),'value'].sum() if view is not None and view.loc[view.account.eq(acct),'value'].notna().all() else None
+            st.markdown(f'<div class="ds-link"><span><b class="ds-h2">{escape(acct)}</b> {ui.chip(code)}</span><b>{ui.won(value,unit=False)}</b></div>',unsafe_allow_html=True)
+            st.button('전략 바꾸기 ›',on_click=open_fix,args=(code,),key='mine_change_rule')
+            with st.form('qty'+code+str(st.session_state.revision)):
+                new_shares={}
+                for r in sub.itertuples():
+                    cash=r.ticker=='CASH';gold=r.ticker==m.GOLD_TICKER
+                    label=f'{r.name} · ' + ('현금 · 원' if cash else f'{r.ticker} · {r.category} · 목표 {r.target_pct:g}%'+(' · g' if gold else ''))
+                    step=10000. if cash else (.1 if gold or (r.market=="US" and bool(dict(zip(conf.code,conf.fractional_us)).get(code,False)) if 'fractional_us' in conf else gold) else 1.)
+                    new_shares[r.Index]=st.number_input(label,min_value=0.,value=float(r.shares),step=step,format='%.0f' if cash else '%g',key=f'q_{code}_{r.ticker}')
+                a,b=st.columns([1,1])
+                b_save=b.form_submit_button('저장',type='primary',use_container_width=True)
+                if b_save:
                     try:
-                        if quote.empty or pd.isna(quote.iloc[0].close) or pd.isna(quote.iloc[0].fx):
-                            raise DataError('매매를 반영하기 전에 선택한 기준일의 종가를 조회하세요')
-                        side='매수' if buy else '매도';updated,before,after=m.adjust(h,code,ticker,q,side)
-                        changed_view=m.revalue(view,updated)
-                        log=m.action(updated,code,ticker,q,side,day,before,after)
-                        install({'holdings':updated,'actions':pd.concat([st.session_state.actions,pd.DataFrame([log])],ignore_index=True)})
-                        st.session_state.valued={'date':str(day),'view':changed_view,'errors':result['errors']}
-                        st.session_state.notice=f'{ticker} {side} {q:g}주 반영 · {before:g} → {after:g} · 조회된 종가로 평가액과 비중을 재계산했습니다.'
-                        st.rerun()
+                        updated=h.copy()
+                        for idx,q in new_shares.items():updated.loc[idx,'shares']=q
+                        st.session_state.demo=False;apply({'holdings':m.validate_holdings(updated)},f'{acct} 수량을 저장했어요.')
                     except DataError as e:st.error(str(e))
-
-elif page=='기록':
-    memo=st.text_input('평가 메모')
-    if st.button('평가 기록 확정',disabled=view is None):
-        try:
-            apply({'snapshots':snapshot_table(view,day,memo)},'평가를 기록했습니다.')
-        except DataError as e:st.error(str(e))
-    selected=st.selectbox('내보낼 시트',TABLES);table(st.session_state[selected]);st.code(to_tsv(st.session_state[selected]),language=None)
-    st.download_button('CSV 다운로드',to_csv_bytes(st.session_state[selected]),selected+'.csv','text/csv')
-
-elif page=='설정':
-    tabs=st.tabs(['계좌 점검','전략 관리','종목·수량·비중','2027 전략 템플릿','원장·백업'])
-    with tabs[0]:
-        st.caption('계좌마다 어떤 규칙이 걸리는지, 주문이나 판정을 틀리게 만들 칸이 있는지 보여 줍니다. 「고치기」에서 역할과 목표 비중을 바로 고칠 수 있습니다.')
-        results=checkup.check(st.session_state.holdings,st.session_state.strategies,view)
-        if view is None:st.caption('가격을 불러오면 「가격 없음」과 「목표와 실제 차이」도 점검합니다.')
-        free=[c for c in rules.ORDER if c not in set(st.session_state.holdings.strategy)]
-        for r in results:
-            badge={'문제':'blocked','확인':'judged','정상':'skipped'}[r['status']]
-            with st.container(border=True):
-                st.markdown(f'<div class="check-card {badge}"><div class="card-top"><h3>{escape(str(r["account"]))}</h3><span class="check-badge">{escape(r["code"])} · {r["status"]}</span></div><p class="check-rule">{"⚙️ " if r["judged"] else ""}{escape(r["rule"])}</p></div>',unsafe_allow_html=True)
-                for level,text in r['issues']:(st.error if level=='문제' else st.warning)(text)
-                with st.expander('고치기'):
-                    h=st.session_state.holdings;sub=h[h.strategy.eq(r['code'])]
-                    shown=sub[['name','ticker','role','target_pct']].rename(columns={'name':'종목','ticker':'티커','role':'역할','target_pct':'목표 (%)'})
-                    with st.form('fix'+r['code']+str(st.session_state.revision)):
-                        edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['종목','티커'],column_config={'역할':st.column_config.SelectboxColumn(options=list(dict.fromkeys(checkup.ROLES+sub.role.tolist()))),'목표 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%g')})
-                        st.caption(f'목표 합계 {sub.target_pct.sum():g}% → 100%가 되게 맞추세요. 역할은 판정에 쓰는 값(현금·필터·레버리지)만 남기고 나머지는 비우세요.')
-                        if st.form_submit_button('저장',use_container_width=True):
-                            try:
-                                updated=h.copy();updated.loc[sub.index,['role','target_pct']]=edited[['역할','목표 (%)']].to_numpy()
-                                st.session_state.demo=False;install({'holdings':m.validate_holdings(updated)});error=persist()
-                                st.session_state.notice=f'{r["code"]} 계좌를 고쳤습니다.'+(f' (Sheets 저장 실패: {error})' if error else '');st.rerun()
-                            except DataError as e:st.error(str(e))
-                    if not r['judged']:
-                        st.caption('전략 코드 바꾸기 · 계좌 이름은 그대로 두고 코드만 바꿉니다. 규칙은 코드로 정해집니다(예: EM = 2027 일반계좌 규칙).')
-                        labels=[f'{c} · {checkup.describe(c,checkup.params_of(st.session_state.strategies,c))}' for c in free]
-                        new=st.selectbox('바꿀 코드',['그대로']+labels+['직접 입력(규칙 없음)'],key='rule_for'+r['code']).split(' · ')[0]
-                        if new=='직접 입력(규칙 없음)':new=st.text_input('새 코드(영문, 예: SAMSUNG)',key='rule_text'+r['code']).strip().upper() or '그대로'
-                        if new!='그대로' and st.button(f'{r["code"]} → {new}로 바꾸기',key='rename'+r['code']):
-                            conf=st.session_state.strategies;desc=conf.loc[conf.code.eq(r['code']),'description']
-                            try:apply(m.change_strategy(ws(),r['code'],new,str(r['account']),str(desc.iloc[0]) if not desc.empty else ''),f'{r["code"]}를 {new}로 바꿨습니다. 계좌 이름과 과거 기록은 그대로입니다.')
-                            except DataError as e:st.error(str(e))
-    with tabs[1]:
-        with st.expander('새 전략 추가',expanded=st.session_state.holdings.empty):
-            with st.form('new_strategy'):
-                name=st.text_input('전략명');account=st.text_input('계좌명');description=st.text_input('설명')
-                if st.form_submit_button('전략 추가'):
-                    try:
-                        data=m.add_strategy(ws(),name,account,description);st.session_state.demo=False;apply(data,'전략을 추가했습니다.')
-                    except DataError as e:st.error(str(e))
-        codes=sorted(set(st.session_state.strategies.code)|set(st.session_state.holdings.strategy))
-        if codes:
-            code=st.selectbox('관리할 전략',codes,key='manage_strategy')
-            h=st.session_state.holdings;conf=st.session_state.strategies;row=conf[conf.code.eq(code)]
-            account=row.account.iloc[0] if not row.empty else h.loc[h.strategy.eq(code),'account'].iloc[0]
-            description=row.description.iloc[0] if not row.empty else ''
-            with st.form('change'+code+str(st.session_state.revision)):
-                name=st.text_input('전략명 변경',code);account_new=st.text_input('계좌명 변경',account);desc=st.text_input('설명 변경',description)
-                if st.form_submit_button('변경 적용'):
-                    try:apply(m.change_strategy(ws(),code,name,account_new,desc),'전략 정보를 변경했습니다. 과거 기록은 보존됩니다.')
-                    except DataError as e:st.error(str(e))
-            confirm=st.checkbox('이 전략을 현재 목록에서 삭제합니다. 과거 기록은 보존됩니다.',key='delete_confirm'+code)
-            if st.button('전략 삭제',disabled=not confirm,key='delete_strategy'+code):
-                try:apply(m.delete_strategy(ws(),code),'전략을 삭제했습니다.')
-                except DataError as e:st.error(str(e))
-    with tabs[2]:
-        h=st.session_state.holdings;codes=h.strategy.drop_duplicates().tolist()
-        if not codes:st.info('전략 관리에서 전략을 먼저 추가하세요.')
-        else:
-            code=st.selectbox('전략',codes,key='asset_strategy');sub=h[h.strategy.eq(code)].copy()
-            st.caption('보유수량은 최종 잔고입니다. CASH 수량은 원화 현금 잔액입니다. 후보 종목은 수량 0으로 등록하세요. 역할: LAA 필터 종목은 「필터」, SSO·ISA 매수 종목은 「레버리지」(비워 두면 종목명으로 찾습니다). DAA·ISA·일반계좌 1의 현금 몫은 템플릿의 단기채권(153130) 행에 둡니다.')
-            labels={'ticker':'티커','name':'종목명','market':'시장','category':'자산 분류','role':'역할','shares':'보유수량','target_pct':'목표비중 (%)'}
-            shown=sub[list(labels)].rename(columns=labels)
-            with st.form('edit_assets'+code+str(st.session_state.revision)):
-                edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['티커','시장'],column_config={'자산 분류':st.column_config.SelectboxColumn(options=list(dict.fromkeys(m.CATEGORIES+sub.category.tolist()))),'보유수량':st.column_config.NumberColumn(min_value=0.,format='%.4f'),'목표비중 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%.2f')})
-                st.caption(f'현재 저장된 목표비중 합계 {sub.target_pct.sum():.2f}% · 합계 100%가 아니어도 작성 중인 계획을 저장할 수 있습니다.')
-                if st.form_submit_button('보유수량·목표비중 적용'):
-                    try:
-                        updated=h.copy();updated.loc[sub.index,['name','category','role','shares','target_pct']]=edited[['종목명','자산 분류','역할','보유수량','목표비중 (%)']].to_numpy()
-                        st.session_state.demo=False;apply({'holdings':m.validate_holdings(updated)},'수량과 목표비중을 적용했습니다.')
-                    except DataError as e:st.error(str(e))
-            if abs(sub.target_pct.sum()-100)>.01:st.warning('목표비중 합계가 100%가 아닙니다. 리밸런싱 전에 조정하세요.')
-            if m.GOLD_TICKER not in set(sub.ticker) and st.button('금 현물(g) 항목 추가',key='add_gold'+code,help='국제 금시세(달러/온스) × 원/달러 ÷ 31.1035로 1g 가격을 추정합니다. 추가한 뒤 보유수량에 g 수를 입력하세요.'):
-                try:apply({'holdings':m.add_asset(h,code,m.GOLD_ASSET)},'금 현물 항목을 추가했습니다. 보유수량에 g 수를 입력하세요.')
-                except DataError as e:st.error(str(e))
-            with st.expander('종목 검색·추가',expanded=False):
-                asset=picker('settings'+code)
-                with st.form('asset_add'+code):
-                    shares=st.number_input('추가할 보유수량',min_value=0.,step=1.,format='%.4f');target=st.number_input('추가할 목표비중 (%)',min_value=0.,max_value=100.,step=1.)
-                    if st.form_submit_button('전략에 종목 추가'):
-                        try:apply({'holdings':m.add_asset(h,code,asset,shares,target)},'종목을 추가했습니다.')
+            with st.expander('+ 종목 검색·추가'):
+                asset=picker('mine'+code)
+                with st.form('mine_add'+code):
+                    shares=st.number_input('보유수량',min_value=0.,step=1.,format='%g');target=st.number_input('목표비중 (%)',min_value=0.,max_value=100.,step=1.)
+                    if st.form_submit_button('이 계좌에 추가'):
+                        try:apply({'holdings':m.add_asset(h,code,asset,shares,target)},'종목을 추가했어요.')
                         except DataError as e:st.error(str(e))
-            options=sub.loc[sub.ticker.ne('CASH'),'ticker'].tolist()
-            if options:
-                ticker=st.selectbox('삭제할 종목',options,key='delete_asset_select'+code)
-                if st.button('종목 삭제',key='delete_asset'+code):
-                    try:apply({'holdings':m.delete_asset(h,code,ticker)},'종목을 삭제했습니다.')
+    # 4. 금 현물 and 입출금 rows.
+    gold=h[h.ticker.eq(m.GOLD_TICKER)]
+    with st.container(key='mine_rows'):
+        if not gold.empty:
+            g=float(gold.shares.sum());per=view.loc[view.ticker.eq(m.GOLD_TICKER)] if view is not None else pd.DataFrame()
+            per_g=float(per.close.iloc[0]*per.fx.iloc[0]) if not per.empty and pd.notna(per.close.iloc[0]) else None
+            st.markdown(f'<div class="ds-link"><span><b>금 현물</b><small>{g:g}g × 국제시세{" · 1g 약 "+ui.won(per_g,unit=False) if per_g else ""}</small></span></div>',unsafe_allow_html=True)
+            st.button('금 g 수 수정 ›',on_click=pick_account,args=(str(gold.account.iloc[0]),),key='mine_gold')
+        cf=st.session_state.cashflows;principal=performance.summary(1.,cf,day)
+        st.markdown(f'<div class="ds-link" style="margin-top:8px"><span><b>입출금 기록</b><small>날짜·계좌·금액·메모{" · 원금 "+ui.won(principal["principal"],unit=False) if principal else ""}</small></span></div>',unsafe_allow_html=True)
+        with st.expander('입출금 추가 · 목록'):
+            with st.form('cashflow_add'):
+                d=st.date_input('날짜',day,key='cf_date');acct=st.selectbox('계좌',accounts,key='cf_acct')
+                kind=st.radio('구분',['입금','출금'],horizontal=True,key='cf_kind');amount=st.number_input('금액(원)',min_value=0.,step=100000.,format='%.0f',key='cf_amount')
+                memo=st.text_input('메모',key='cf_memo')
+                if st.form_submit_button('입출금 추가',type='primary',use_container_width=True):
+                    try:apply({'cashflows':performance.add_cashflow(cf,h,d,acct,amount if kind=='입금' else -amount,memo)},f'{acct} {kind} {ui.won(amount)}을 기록했어요.')
                     except DataError as e:st.error(str(e))
-    with tabs[3]:
-        try:template=load_template()
-        except (OSError,ValueError,DataError) as e:template=None;st.error(f'템플릿을 읽지 못했습니다: {e}')
-        if template:
-            st.caption(f'{template["name"]} · 시작일 {template["effective_date"]} · 계좌별 전략 매핑입니다. 보유 수량은 바꾸지 않고, 전략 규칙·종목 목록·고정 목표 비중만 맞춥니다.')
-            table(mapping_table(template))
-            if st.button('적용하면 바뀌는 내용 미리 보기'):
-                try:st.session_state.template_preview=apply_template(st.session_state.holdings,st.session_state.strategies,st.session_state.strategy_versions,template)
+            if not cf.empty:
+                recent=cf.tail(10).iloc[::-1]
+                rows=''.join(f'<li><span>{escape(str(r.date))} · {escape(str(getattr(r,"account","") or r.strategy))}<small class="ds-label"> {escape(str(r.memo or ""))}</small></span><b class="ds-num">{ui.won(pd.to_numeric(r.amount),unit=False)}</b></li>' for r in recent.itertuples())
+                st.markdown(f'<div class="ds-assets" style="grid-template-columns:1fr"><ul>{rows}</ul></div>',unsafe_allow_html=True)
+                drop=st.selectbox('지울 기록',['선택 안 함']+[f'{i} · {r.date} · {ui.won(pd.to_numeric(r.amount))}' for i,r in recent.iterrows()],key='cf_drop')
+                if drop!='선택 안 함' and st.button('이 기록 지우기',key='cf_drop_go'):
+                    apply({'cashflows':cf.drop(index=int(drop.split(' · ')[0])).reset_index(drop=True)},'입출금 기록을 지웠어요.')
+    # 5. 고급 설정: the earlier settings tabs.
+    # A switch, not an expander: the tabs below contain expanders, which Streamlit cannot nest.
+    if st.toggle('고급 설정 · 2027 템플릿 · 백업·복원',key='show_advanced'):
+        tabs=st.tabs(['전략 관리','종목·수량·비중','2027 전략 템플릿','원장·백업'])
+        with tabs[0]:
+            with st.expander('새 전략 추가',expanded=st.session_state.holdings.empty):
+                with st.form('new_strategy'):
+                    name=st.text_input('전략명');account=st.text_input('계좌명');description=st.text_input('설명')
+                    if st.form_submit_button('전략 추가'):
+                        try:
+                            data=m.add_strategy(ws(),name,account,description);st.session_state.demo=False;apply(data,'전략을 추가했습니다.')
+                        except DataError as e:st.error(str(e))
+            codes=sorted(set(st.session_state.strategies.code)|set(st.session_state.holdings.strategy))
+            if codes:
+                code=st.selectbox('관리할 전략',codes,key='manage_strategy')
+                h=st.session_state.holdings;conf=st.session_state.strategies;row=conf[conf.code.eq(code)]
+                account=row.account.iloc[0] if not row.empty else h.loc[h.strategy.eq(code),'account'].iloc[0]
+                description=row.description.iloc[0] if not row.empty else ''
+                with st.form('change'+code+str(st.session_state.revision)):
+                    name=st.text_input('전략명 변경',code);account_new=st.text_input('계좌명 변경',account);desc=st.text_input('설명 변경',description)
+                    if st.form_submit_button('변경 적용'):
+                        try:apply(m.change_strategy(ws(),code,name,account_new,desc),'전략 정보를 변경했습니다. 과거 기록은 보존됩니다.')
+                        except DataError as e:st.error(str(e))
+                confirm=st.checkbox('이 전략을 현재 목록에서 삭제합니다. 과거 기록은 보존됩니다.',key='delete_confirm'+code)
+                if st.button('전략 삭제',disabled=not confirm,key='delete_strategy'+code):
+                    try:apply(m.delete_strategy(ws(),code),'전략을 삭제했습니다.')
+                    except DataError as e:st.error(str(e))
+        with tabs[1]:
+            h=st.session_state.holdings;codes=h.strategy.drop_duplicates().tolist()
+            if not codes:st.info('전략 관리에서 전략을 먼저 추가하세요.')
+            else:
+                code=st.selectbox('전략',codes,key='asset_strategy');sub=h[h.strategy.eq(code)].copy()
+                st.caption('보유수량은 최종 잔고입니다. CASH 수량은 원화 현금 잔액입니다. 후보 종목은 수량 0으로 등록하세요. 역할: LAA 필터 종목은 「필터」, SSO·ISA 매수 종목은 「레버리지」(비워 두면 종목명으로 찾습니다). DAA·ISA·일반계좌 1의 현금 몫은 템플릿의 단기채권(153130) 행에 둡니다.')
+                labels={'ticker':'티커','name':'종목명','market':'시장','category':'자산 분류','role':'역할','shares':'보유수량','target_pct':'목표비중 (%)'}
+                shown=sub[list(labels)].rename(columns=labels)
+                with st.form('edit_assets'+code+str(st.session_state.revision)):
+                    edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['티커','시장'],column_config={'자산 분류':st.column_config.SelectboxColumn(options=list(dict.fromkeys(m.CATEGORIES+sub.category.tolist()))),'보유수량':st.column_config.NumberColumn(min_value=0.,format='%.4f'),'목표비중 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%.2f')})
+                    st.caption(f'현재 저장된 목표비중 합계 {sub.target_pct.sum():.2f}% · 합계 100%가 아니어도 작성 중인 계획을 저장할 수 있습니다.')
+                    if st.form_submit_button('보유수량·목표비중 적용'):
+                        try:
+                            updated=h.copy();updated.loc[sub.index,['name','category','role','shares','target_pct']]=edited[['종목명','자산 분류','역할','보유수량','목표비중 (%)']].to_numpy()
+                            st.session_state.demo=False;apply({'holdings':m.validate_holdings(updated)},'수량과 목표비중을 적용했습니다.')
+                        except DataError as e:st.error(str(e))
+                if abs(sub.target_pct.sum()-100)>.01:st.warning('목표비중 합계가 100%가 아닙니다. 리밸런싱 전에 조정하세요.')
+                if m.GOLD_TICKER not in set(sub.ticker) and st.button('금 현물(g) 항목 추가',key='add_gold'+code,help='국제 금시세(달러/온스) × 원/달러 ÷ 31.1035로 1g 가격을 추정합니다. 추가한 뒤 보유수량에 g 수를 입력하세요.'):
+                    try:apply({'holdings':m.add_asset(h,code,m.GOLD_ASSET)},'금 현물 항목을 추가했습니다. 보유수량에 g 수를 입력하세요.')
+                    except DataError as e:st.error(str(e))
+                with st.expander('종목 검색·추가',expanded=False):
+                    asset=picker('settings'+code)
+                    with st.form('asset_add'+code):
+                        shares=st.number_input('추가할 보유수량',min_value=0.,step=1.,format='%.4f');target=st.number_input('추가할 목표비중 (%)',min_value=0.,max_value=100.,step=1.)
+                        if st.form_submit_button('전략에 종목 추가'):
+                            try:apply({'holdings':m.add_asset(h,code,asset,shares,target)},'종목을 추가했습니다.')
+                            except DataError as e:st.error(str(e))
+                options=sub.loc[sub.ticker.ne('CASH'),'ticker'].tolist()
+                if options:
+                    ticker=st.selectbox('삭제할 종목',options,key='delete_asset_select'+code)
+                    if st.button('종목 삭제',key='delete_asset'+code):
+                        try:apply({'holdings':m.delete_asset(h,code,ticker)},'종목을 삭제했습니다.')
+                        except DataError as e:st.error(str(e))
+        with tabs[2]:
+            try:template=load_template()
+            except (OSError,ValueError,DataError) as e:template=None;st.error(f'템플릿을 읽지 못했습니다: {e}')
+            if template:
+                st.caption(f'{template["name"]} · 시작일 {template["effective_date"]} · 계좌별 전략 매핑입니다. 보유 수량은 바꾸지 않고, 전략 규칙·종목 목록·고정 목표 비중만 맞춥니다.')
+                table(mapping_table(template))
+                if st.button('적용하면 바뀌는 내용 미리 보기'):
+                    try:st.session_state.template_preview=apply_template(st.session_state.holdings,st.session_state.strategies,st.session_state.strategy_versions,template)
+                    except DataError as e:st.error(str(e))
+                preview=st.session_state.get('template_preview')
+                if preview:
+                    table(preview[3])
+                    st.caption('금 현물(GC=F) 수량은 g ÷ 31.1035(트로이온스)로 입력하세요. 새 종목은 수량 0으로 들어가니 실제 수량을 「종목·수량·비중」에서 입력하세요.')
+                    ok=st.checkbox('위 내용을 확인했습니다. 이전 전략 설정은 전략 이력에 보관됩니다.',key='template_confirm')
+                    if st.button('2027 템플릿 적용',disabled=not ok,type='primary'):
+                        h,conf,versions,_=st.session_state.pop('template_preview')
+                        st.session_state.demo=False
+                        apply({'holdings':h,'strategies':conf,'strategy_versions':versions},'2027 전략 템플릿을 적용했습니다.')
+        with tabs[3]:
+            st.caption('기존 Apps Script 연결과 Sheets 저장·충돌 확인 방식은 유지됩니다.')
+            if connected and st.button('최신 원장 미리보기'):
+                try:st.session_state.preview=load_workspace(remote['SHEETS_WEBAPP_URL'],remote['SHEETS_SECRET'])
                 except DataError as e:st.error(str(e))
-            preview=st.session_state.get('template_preview')
-            if preview:
-                table(preview[3])
-                st.caption('금 현물(GC=F) 수량은 g ÷ 31.1035(트로이온스)로 입력하세요. 새 종목은 수량 0으로 들어가니 실제 수량을 「종목·수량·비중」에서 입력하세요.')
-                ok=st.checkbox('위 내용을 확인했습니다. 이전 전략 설정은 전략 이력에 보관됩니다.',key='template_confirm')
-                if st.button('2027 템플릿 적용',disabled=not ok,type='primary'):
-                    h,conf,versions,_=st.session_state.pop('template_preview')
-                    st.session_state.demo=False
-                    apply({'holdings':h,'strategies':conf,'strategy_versions':versions},'2027 전략 템플릿을 적용했습니다.')
-    with tabs[4]:
-        st.caption('기존 Apps Script 연결과 Sheets 저장·충돌 확인 방식은 유지됩니다.')
-        if connected and st.button('최신 원장 미리보기'):
-            try:st.session_state.preview=load_workspace(remote['SHEETS_WEBAPP_URL'],remote['SHEETS_SECRET'])
-            except DataError as e:st.error(str(e))
-        if st.session_state.get('preview'):
-            data,token=st.session_state.preview;table(data['holdings'])
-            if st.button('미리 본 원장 적용'):
-                st.session_state.token=token;st.session_state.demo=False;data=st.session_state.pop('preview')[0];apply(data,'원장을 적용했습니다.',save=False)
-        file=st.file_uploader('보유내역 CSV·TSV',type=['csv','tsv'])
-        if file and st.button('보유내역 가져오기'):
-            try:st.session_state.demo=False;apply({'holdings':m.validate_holdings(parse_table(file.getvalue()))},'보유내역을 가져왔습니다.',save=False)
-            except DataError as e:st.error(str(e))
-        backup=st.file_uploader('전체 백업 JSON',type=['json'])
-        if backup and st.button('백업 복원'):
-            try:st.session_state.demo=False;apply(restore_backup(backup.getvalue()),'백업을 복원했습니다.',save=False)
-            except DataError as e:st.error(str(e))
+            if st.session_state.get('preview'):
+                data,token=st.session_state.preview;table(data['holdings'])
+                if st.button('미리 본 원장 적용'):
+                    st.session_state.token=token;st.session_state.demo=False;data=st.session_state.pop('preview')[0];apply(data,'원장을 적용했습니다.',save=False)
+            file=st.file_uploader('보유내역 CSV·TSV',type=['csv','tsv'])
+            if file and st.button('보유내역 가져오기'):
+                try:st.session_state.demo=False;apply({'holdings':m.validate_holdings(parse_table(file.getvalue()))},'보유내역을 가져왔습니다.',save=False)
+                except DataError as e:st.error(str(e))
+            backup=st.file_uploader('전체 백업 JSON',type=['json'])
+            if backup and st.button('백업 복원'):
+                try:st.session_state.demo=False;apply(restore_backup(backup.getvalue()),'백업을 복원했습니다.',save=False)
+                except DataError as e:st.error(str(e))
+            st.markdown('<b>시트 내보내기</b>',unsafe_allow_html=True)
+            selected=st.selectbox('내보낼 시트',TABLES,key='export_table');table(st.session_state[selected])
+            st.download_button('CSV 다운로드',to_csv_bytes(st.session_state[selected]),selected+'.csv','text/csv')
 
 st.caption(f'앱 버전 {APP_VERSION}')

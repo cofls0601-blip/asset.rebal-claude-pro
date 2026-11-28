@@ -9,8 +9,12 @@ from streamlit.testing.v1 import AppTest
 from streamlit_app import manual as m
 
 class UITests(unittest.TestCase):
+ def setUp(self):
+  import streamlit as st
+  st.cache_data.clear()  # the app caches prices across runs; each test brings its own
  def start(self):
-  at=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'streamlit_app.py')).run();at.radio(key='page').set_value('설정').run();return at
+  at=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'streamlit_app.py')).run();at.radio(key='page').set_value('내 자산').run()
+  at.toggle(key='show_advanced').set_value(True).run();return at
  def text(self,at,label,value):next(x for x in at.text_input if x.label==label).set_value(value)
  def click(self,at,label):next(x for x in at.button if x.label==label).click().run();self.assertFalse(at.exception)
  def test_strategy_add_rename_delete(self):
@@ -19,10 +23,10 @@ class UITests(unittest.TestCase):
   self.assertIn('UPDATED',at.session_state['holdings'].strategy.tolist())
   at.selectbox(key='manage_strategy').set_value('UPDATED').run();at.checkbox(key='delete_confirmUPDATED').check().run();self.click(at,'전략 삭제');self.assertNotIn('UPDATED',at.session_state['holdings'].strategy.tolist())
  def test_search_add_edit_delete_and_no_stale_hits(self):
-  at=self.start();self.text(at,'티커 또는 종목명 검색','KODEX')
-  with patch.object(m,'search',return_value=[{'ticker':'069500','name':'KODEX 200','market':'KR'}]):self.click(at,'종목 검색')
+  at=self.start();at.text_input(key='settingsDEMOquery').set_value('KODEX')  # the 고급 설정 search, not the 내 자산 one
+  with patch.object(m,'search',return_value=[{'ticker':'069500','name':'KODEX 200','market':'KR'}]):at.button(key='settingsDEMOsearch').click().run()
   self.click(at,'전략에 종목 추가');self.assertIn('069500',at.session_state['holdings'].ticker.tolist())
-  self.text(at,'티커 또는 종목명 검색','OTHER');at.run();self.assertEqual(at.selectbox(key='settingsDEMOchoice').value,-1)
+  at.text_input(key='settingsDEMOquery').set_value('OTHER');at.run();self.assertEqual(at.selectbox(key='settingsDEMOchoice').value,-1)
   # Simulate actual data-editor edit events and submit its form.
   editors=[e for e in at.dataframe if '보유수량' in list(e.value.columns)];self.assertTrue(editors)  # the holdings editor, not the check-up one
   editor_key=editors[0].proto.id.split('-',2)[-1]
@@ -32,36 +36,28 @@ class UITests(unittest.TestCase):
   self.assertEqual(at.session_state['holdings'].shares.iloc[0],5)
   self.assertEqual(at.session_state['holdings'].target_pct.iloc[0],40)
   at.selectbox(key='delete_asset_selectDEMO').set_value('069500').run();self.click(at,'종목 삭제');self.assertNotIn('069500',at.session_state['holdings'].ticker.tolist())
- def test_priced_menus_and_order(self):
-  at=self.start();h=at.session_state['holdings'].copy();h.loc[0,'shares']=10;h.loc[h.ticker.eq('CASH'),'shares']=1000;at.session_state['holdings']=h
+ def test_priced_menus_and_quantity_edit(self):
+  import streamlit as st
+  st.cache_data.clear();self.addCleanup(st.cache_data.clear)  # the rebalancing page asks prices for SPY/QQQ; keep them out of other tests
+  patcher=patch.object(m,'fetch_prices',side_effect=lambda t,market,d,*a,**k:pd.Series([100.],index=[pd.Timestamp(d)]));patcher.start();self.addCleanup(patcher.stop)
+  at=self.start();h=at.session_state['holdings'].copy();h.loc[h.ticker.eq('CASH'),'shares']=1000;at.session_state['holdings']=h
   day=at.sidebar.date_input[0].value;v,e=m.valuation(h,day,lambda t,m,d:pd.Series([100.],index=[pd.Timestamp(d)]))
   at.session_state['valued']={'date':str(day),'view':v,'errors':e}
-  for page in ['이번달','리밸런싱','주문안','기록']:
+  for page in ['홈','월말 리밸런싱','내 자산']:
    at.radio(key='page').set_value(page).run();self.assertFalse(at.exception)
-  at.radio(key='page').set_value('주문안').run();at.number_input[0].set_value(2);self.click(at,'매수');self.assertEqual(at.session_state['holdings'].shares.iloc[0],12)
-  self.assertEqual(len(at.session_state['actions']),1)
-  updated=at.session_state['valued']['view']
-  self.assertEqual(updated.value.iloc[0],1200)
-  self.assertAlmostEqual(updated.weight.iloc[0],1200/2200*100)
-  self.assertEqual(updated.close.iloc[0],100)
-  at.radio(key='page').set_value('리밸런싱').run()
-  self.assertEqual(list(at.dataframe[0].value.columns),['티커','종목명','현재 비중','목표 비중'])
-  at.radio(key='page').set_value('이번달').run();self.assertFalse(at.exception)
+  at.number_input(key='q_DEMO_360750').set_value(12).run()
+  next(b for b in at.button if b.label=='저장').click().run();self.assertFalse(at.exception)
+  self.assertEqual(at.session_state['holdings'].set_index('ticker').shares['360750'],12)
+  self.assertIn('전략',' '.join(x.value for x in at.markdown))
+  at.radio(key='page').set_value('홈').run();self.assertFalse(at.exception)
   shown=' '.join(x.value for x in at.markdown);self.assertIn('총자산',shown);self.assertIn('전일',shown);self.assertIn('목표·현재 도넛',shown);self.assertIn('이번 달 할 일',shown)
 
- def test_monthly_check_proposes_and_applies_only_on_click(self):
+ def test_cashflow_add_shows_principal(self):
   at=self.start()
-  h=pd.DataFrame([dict(strategy='SSO',account='일반계좌 2',ticker='SSO',name='ProShares Ultra S&P500',market='US',category='선진국 주식',role='',target_pct=70.,shares=7.),
-                  dict(strategy='SSO',account='일반계좌 2',ticker='CASH',name='현금',market='KR',category='현금',role='현금',target_pct=30.,shares=300.)])
-  at.session_state['holdings']=m.validate_holdings(h);day=at.sidebar.date_input[0].value
-  idx=pd.bdate_range(end=pd.Timestamp(day),periods=260);spy=pd.Series(100.,index=idx);spy.iloc[-1]=84.
-  fetch=lambda t,market,d:spy if t=='SPY' else pd.Series([100. if t=='SSO' else 1.],index=[pd.Timestamp(d)])
-  v,e=m.valuation(at.session_state['holdings'],day,fetch);at.session_state['valued']={'date':str(day),'view':v,'errors':e}
-  with patch.object(m,'fetch_prices',side_effect=fetch):
-   at.radio(key='page').set_value('월말 점검').run();self.assertFalse(at.exception)
-   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[70.,30.])
-   self.click(at,'목표 비중에 반영')
-  self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[85.,15.])
+  at.number_input(key='cf_amount').set_value(5_000_000).run();self.text(at,'메모','첫 원금')
+  next(b for b in at.button if b.label=='입출금 추가').click().run();self.assertFalse(at.exception)
+  cf=at.session_state['cashflows'];self.assertEqual(cf.amount.tolist(),[5_000_000]);self.assertEqual(cf.strategy.tolist(),['DEMO'])
+  self.assertIn('원금 500만',' '.join(x.value for x in at.markdown))
 
  def test_add_gold_row(self):
   at=self.start();self.click(at,'금 현물(g) 항목 추가')
@@ -131,22 +127,24 @@ class UITests(unittest.TestCase):
   h=pd.DataFrame([dict(strategy='SSO',account='일반계좌 2',ticker='SSO',name='ProShares Ultra S&P500',market='US',category='선진국 주식',role='-10% 트리거',target_pct=100.,shares=1.),
                   dict(strategy='SSO',account='일반계좌 2',ticker='CASH',name='현금',market='KR',category='현금',role='현금',target_pct=30.,shares=0.)])
   at.session_state['holdings']=m.validate_holdings(h);at.run();self.assertFalse(at.exception)
-  self.assertTrue(any('130%' in e.value for e in at.error));self.assertTrue(any('「-10% 트리거」' in w.value for w in at.warning))
+  shown=' '.join(x.value for x in at.markdown);self.assertIn('130%',shown);self.assertIn('「-10% 트리거」',shown)
+  self.click(at,'고치기 ›');self.assertIn('목표 합계 130% → 30% 넘쳐요',' '.join(x.value for x in at.markdown))
   editor=next(e for e in at.dataframe if '역할' in list(e.value.columns))
   at.session_state[editor.proto.id]={'edited_rows':{0:{'역할':'레버리지','목표 (%)':70}},'added_rows':[],'deleted_rows':[]}
-  next(b for b in at.button if b.label=='저장').click().run();self.assertFalse(at.exception)
+  next(b for b in at.button if b.label=='고쳐서 저장').click().run();self.assertFalse(at.exception)
   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[70.,30.]);self.assertEqual(at.session_state['holdings'].role.iloc[0],'레버리지')
-  self.assertFalse(any('130%' in e.value for e in at.error))
+  self.assertNotIn('130%',' '.join(x.value for x in at.markdown))
 
  def test_checkup_renames_codes_but_keeps_account_names(self):
   at=self.start()
   h=pd.DataFrame([dict(strategy='EM',account='삼성 소액',ticker='005930',name='삼성전자',market='KR',category='신흥국 주식',role='',target_pct=100.,shares=1.),
                   dict(strategy='HANA',account='하나',ticker='CASH',name='현금',market='KR',category='현금',role='현금',target_pct=100.,shares=0.)])
-  at.session_state['holdings']=m.validate_holdings(h);at.run()
+  at.session_state['holdings']=m.validate_holdings(h);at.session_state['fix_code']='HANA';at.run()
   sb=at.selectbox(key='rule_forHANA');sb.select_index([o.split(' · ')[0] for o in sb.options].index('KSP')).run()  # options show 'KSP · 규칙 설명'
   next(b for b in at.button if b.label=='HANA → KSP로 바꾸기').click().run();self.assertFalse(at.exception)
   got=at.session_state['holdings'].set_index('strategy').account.to_dict()
   self.assertEqual(got,{'EM':'삼성 소액','KSP':'하나'})
+  at.session_state['fix_code']='EM';at.run()
   at.selectbox(key='rule_forEM').set_value('직접 입력(규칙 없음)').run();at.text_input(key='rule_textEM').set_value('etc').run()
   next(b for b in at.button if b.label=='EM → ETC로 바꾸기').click().run();self.assertFalse(at.exception)  # free-text rename still works
   self.assertIn('ETC',set(at.session_state['holdings'].strategy))
@@ -161,7 +159,7 @@ class UITests(unittest.TestCase):
   with patch.object(sheets_sync,'load_workspace',return_value=(w,'tok1')),patch.object(sheets_sync,'save_workspace',side_effect=save):
    at=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'streamlit_app.py'))
    pw='p'*12;at.secrets['SHEETS_WEBAPP_URL']='https://script.google.com/macros/s/x/exec';at.secrets['SHEETS_SECRET']='s'*24;at.secrets['APP_PASSWORD']=pw
-   at.session_state['auth']=hashlib.sha256(pw.encode()).hexdigest();at.run();at.radio(key='page').set_value('설정').run();self.assertFalse(at.exception)
+   at.session_state['auth']=hashlib.sha256(pw.encode()).hexdigest();at.run();at.radio(key='page').set_value('내 자산').run();at.toggle(key='show_advanced').set_value(True).run();self.assertFalse(at.exception)
    self.click(at,'금 현물(g) 항목 추가')  # an edit saves by itself
    self.assertEqual(saves,['tok1']);self.assertTrue(any('Sheets에 저장했습니다' in x.value for x in at.success))
    next(b for b in at.sidebar.button if b.label=='Sheets에 저장').click().run();self.assertFalse(at.exception)
