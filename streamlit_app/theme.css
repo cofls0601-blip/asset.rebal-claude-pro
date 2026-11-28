@@ -109,3 +109,78 @@ h3{font-size:18px!important;font-weight:600!important}
 @media(max-width:767px){.block-container{padding-top:3.6rem!important}}
 .st-key-page [role="radiogroup"] p{font-size:14px!important}
 .check-rule{font-size:14px!important;color:var(--desk-text);margin:8px 0 2px;overflow-wrap:anywhere}
+
+/* ===== Design system 2.0 (2026-11-28, commissioned design): tokens and parts, prefix ds- ===== */
+:root{--bg:#F2F4F6;--text:#191F28;--text3:#8B95A1;--line:#E5E8EB;--brand:#3F46C8;--brand-soft:#ECEDFB;
+ --up:#E42939;--down:#2E6BE6;--same:#12A16B;--warn:#E19A00;--bad-bg:#FDECEE;--warn-bg:#FFF5DB;--card:#fff;
+ --fs-display:32px;--fs-h1:22px;--fs-h2:18px;--fs-body:15px;--fs-label:13px;--fs-cap:12px}
+html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important}
+.ds-card{background:var(--card);border-radius:20px;padding:20px 20px 18px;margin:0 0 12px;box-shadow:0 1px 2px rgba(25,31,40,.04)}
+.ds-card h2,.ds-h2{font-size:var(--fs-h2)!important;font-weight:700!important;margin:0 0 4px!important;color:var(--text)!important;letter-spacing:-.01em}
+.ds-card h2 span,.ds-h2 span{font-size:inherit!important;color:inherit!important}
+.ds-h1{font-size:var(--fs-h1);font-weight:700;color:var(--text);letter-spacing:-.02em;margin:4px 0 2px}
+.ds-display{display:block;font-size:var(--fs-display);font-weight:700;letter-spacing:-.02em;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.2;margin:4px 0 6px}
+.ds-display small{font-size:18px;font-weight:700;margin-left:2px}
+.ds-label{font-size:var(--fs-label);font-weight:500;color:var(--text3)}
+.ds-cap{font-size:var(--fs-cap);color:var(--text3);margin:2px 0 0}
+.ds-num{font-variant-numeric:tabular-nums}
+.ds-chg{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ds-chg.up{color:var(--up)}.ds-chg.down{color:var(--down)}.ds-chg.flat{color:var(--text3)}
+.ds-chg .ds-label{font-weight:500}
+.ds-chip{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:6px;padding:2px 7px;line-height:1.4;letter-spacing:.02em}
+.ds-tag{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:2px 9px;line-height:1.5}
+.ds-tag.same{background:#E3F6EE;color:var(--same)}.ds-tag.warn{background:var(--warn-bg);color:#B07800}.ds-tag.bad{background:var(--bad-bg);color:var(--up)}
+.ds-tag.brand{background:var(--brand-soft);color:var(--brand)}.ds-tag.muted{background:#F2F4F6;color:var(--text3)}
+.ds-status{font-size:12px;color:var(--text3);margin:0 0 8px}
+.ds-alert{border-radius:14px;padding:12px 14px;font-size:14px;font-weight:600;margin:0 0 12px}
+.ds-alert.warn{background:var(--warn-bg);color:#8A5A00}.ds-alert.bad{background:var(--bad-bg);color:var(--up)}
+.ds-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;border-top:1px solid var(--line);margin-top:14px;padding-top:14px}
+.ds-stats div{min-width:0}.ds-stats b{display:block;font-size:17px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ds-stats b.up{color:var(--up)}.ds-stats b.down{color:var(--down)}
+.ds-todo{display:flex;align-items:center;gap:14px}.ds-todo-n{flex:0 0 40px;height:40px;border-radius:12px;background:var(--brand-soft);color:var(--brand);font-weight:700;font-size:20px;display:flex;align-items:center;justify-content:center}
+.ds-todo-n.none{background:#E3F6EE;color:var(--same)}.ds-todo b{display:block;font-size:16px}.ds-todo small{font-size:13px;color:var(--text3)}
+.ds-acct{list-style:none;margin:6px 0 0;padding:0}
+.ds-acct details{border-top:1px solid var(--line)}.ds-acct details:first-child{border-top:0}
+.ds-acct summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:center;padding:14px 0}
+.ds-acct summary::-webkit-details-marker{display:none}
+.ds-dot{width:9px;height:9px;border-radius:50%}
+.ds-acct-name b{display:block;font-size:16px;font-weight:600;color:var(--text);overflow-wrap:anywhere}
+.ds-acct-name small{display:flex;gap:6px;align-items:center;margin-top:4px;font-size:12px;color:var(--text3)}
+.ds-acct-val{text-align:right;font-variant-numeric:tabular-nums}.ds-acct-val b{display:block;font-size:16px;font-weight:600}
+.ds-acct-body{padding:4px 0 16px 22px}
+.ds-donuts{display:flex;gap:18px;justify-content:center;margin:6px 0 4px}
+.ds-donut{border-radius:50%;position:relative;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.ds-donut::before{content:"";position:absolute;inset:22%;background:#fff;border-radius:50%}
+.ds-donut.empty{background:#EEF0F3}
+.ds-donut span{position:relative;font-size:13px;font-weight:700;color:var(--text)}
+.ds-legend{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;font-size:12px;color:var(--text);margin:8px 0}
+.ds-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:0}
+.ds-bar-row{padding:12px 0;border-top:1px solid var(--line)}
+.ds-bar-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.ds-bar-head b{display:block;font-size:15px;font-weight:600;overflow-wrap:anywhere}.ds-bar-head small{display:block;font-size:12px;color:var(--text3);margin-top:2px}
+.ds-bar{position:relative;height:6px;border-radius:3px;background:#EEF0F3;margin-top:8px}
+.ds-bar span{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.ds-bar i{position:absolute;top:-4px;width:2px;height:14px;background:var(--text);border-radius:1px;transform:translateX(-1px)}
+.ds-w{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}.ds-w.over{color:var(--up)}.ds-w.same{color:var(--same)}.ds-w.under{color:var(--down)}
+.ds-w-target{font-size:13px;color:var(--text3);font-variant-numeric:tabular-nums}
+.ds-assets{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center}
+.ds-assets ul{list-style:none;margin:0;padding:0}.ds-assets li{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:4px 0}
+.ds-assets li span i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.ds-assets li b{font-variant-numeric:tabular-nums}
+.ds-link{display:flex;justify-content:space-between;align-items:center;gap:10px}.ds-link b{display:block;font-size:16px}.ds-link small{font-size:13px;color:var(--text3)}
+.ds-order{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;background:#F4F5F7;border-radius:14px;padding:12px 14px;margin:8px 0}
+.ds-order-icon{width:26px;height:26px;border-radius:8px;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.ds-order.sell .ds-order-icon{background:var(--down)}.ds-order.buy .ds-order-icon{background:var(--up)}
+.ds-order b{font-size:15px;font-weight:600;overflow-wrap:anywhere}
+.ds-order-act{font-size:15px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.ds-order.sell .ds-order-act{color:var(--down)}.ds-order.buy .ds-order-act{color:var(--up)}
+.ds-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 0 14px}
+.ds-steps i{display:block;height:4px;border-radius:2px;background:#DDE1E6}.ds-steps .on i{background:var(--brand)}
+.ds-steps span{display:block;font-size:12px;color:var(--text3);margin-top:6px}.ds-steps .on span{color:var(--brand);font-weight:600}
+@media(max-width:767px){.ds-display{font-size:30px}.ds-card{padding:18px 16px 16px;border-radius:18px}.ds-acct-body{padding-left:0}}
+.st-key-todo_card,.st-key-monthly_link,.st-key-monthly_card{background:var(--card);border-radius:20px;padding:18px 18px 14px;margin:0 0 12px;box-shadow:0 1px 2px rgba(25,31,40,.04);gap:.6rem!important}
+.st-key-todo_card button,.st-key-monthly_link button{background:var(--brand-soft)!important;color:var(--brand)!important;border:0!important;font-weight:600!important}
+.st-key-monthly_by [role="radiogroup"]{background:#E9ECEF;border-radius:12px;padding:3px;gap:2px!important;display:inline-flex}
+.st-key-monthly_by [role="radiogroup"] label{padding:6px 14px!important;border-radius:10px;margin:0!important}
+.st-key-monthly_by [data-selected="true"]{background:#fff!important}
+.st-key-monthly_by [data-testid="stRadioOption"] div:has(+ [data-testid="stMarkdownContainer"]){display:none}

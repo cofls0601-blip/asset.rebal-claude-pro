@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from zoneinfo import ZoneInfo
 from html import escape
 from pathlib import Path
@@ -9,7 +10,8 @@ import plotly.express as px
 import streamlit as st
 from streamlit_app import manual as m
 from streamlit_app import rules
-from streamlit_app import checkup
+from streamlit_app import checkup, home, performance, ui
+import plotly.graph_objects as go
 from streamlit_app.orders import apply_fill, orders_frame, plan_orders
 from streamlit_app.tables import change_html, portfolio_table, weight_html
 from streamlit_app.data import DataError, load_default_holdings, load_default_strategies, normalize_strategies, to_csv_bytes, to_tsv
@@ -17,7 +19,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2026-11-28 · 시트 새 구성(한국어 탭)'
+APP_VERSION='2026-11-28 · 디자인 2.0 홈'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -82,7 +84,9 @@ def price_columns(columns):
 def persist():
     """Save to Sheets when connected; returns an error message or None."""
     if not connected or st.session_state.demo:return None
-    try:st.session_state.token=save_workspace(remote['SHEETS_WEBAPP_URL'],remote['SHEETS_SECRET'],ws(),st.session_state.token);st.session_state.dirty=False
+    try:
+        st.session_state.token=save_workspace(remote['SHEETS_WEBAPP_URL'],remote['SHEETS_SECRET'],ws(),st.session_state.token);st.session_state.dirty=False
+        st.session_state.last_saved=datetime.now(ZoneInfo('Asia/Seoul'))
     except DataError as e:return str(e)
 
 def snapshot_table(view,day,memo):
@@ -138,8 +142,10 @@ with st.sidebar:
 
 # Menu sits at the top so it is visible on phones without opening the sidebar.
 page=st.radio('메뉴',['이번달','월말 리밸런싱','월말 점검','리밸런싱','주문안','기록','설정'],horizontal=True,key='page',label_visibility='collapsed')
-st.markdown('<div class="eyebrow">YOUR MONTHLY ALLOCATION</div>',unsafe_allow_html=True)
-st.title(page)
+REDESIGNED=('이번달',)  # pages already in design 2.0: no big title, own status lines
+if page not in REDESIGNED:
+    st.markdown('<div class="eyebrow">YOUR MONTHLY ALLOCATION</div>',unsafe_allow_html=True)
+    st.title(page)
 if page=='월말 리밸런싱':
     day=st.date_input('1 · 기준일 (리밸런싱하는 날)',today,max_value=today,key='rebal_day',help='고른 날의 종가를 이번 달 월말 종가로 보고 판정합니다.')
 # Prices load by themselves (no button) once real holdings are in; the DEMO workspace waits for the button.
@@ -147,59 +153,116 @@ current=st.session_state.get('valued')
 if page!='설정' and (page=='월말 리밸런싱' or not st.session_state.demo) and (not current or current['date']!=str(day)):
     with st.spinner('종가·환율을 불러옵니다…'):refresh(day)
 descriptions={'월말 리밸런싱':'기준일 → 할 일 확인 → 체결 입력 → 마감, 순서대로 진행하세요.','이번달':'총자산과 계좌별 자산을 한눈에 확인하세요. 상세를 누르면 종목이 펼쳐집니다.','월말 점검':'GSM → DAA → ISA → 일반계좌 1 순서로(2026 전략이면 GSM → LAA → SSO → ISA) 규칙 판정을 확인하고, 반영할 전략만 직접 적용하세요.','리밸런싱':'종가와 월간 지표를 참고해 이번 달 목표 비중을 직접 정하세요.','주문안':'매수·매도 수량을 입력하고 자산 현황에 반영하세요.','기록':'현재 평가를 기록하고 Google Sheets로 내보내세요.','설정':'전략, 계좌, 종목과 보유수량을 직접 관리하세요.'}
-st.caption(descriptions[page]+f' · 기준일 {day}')
+if page not in REDESIGNED:st.caption(descriptions[page]+f' · 기준일 {day}')
 if st.session_state.get('notice'):st.success(st.session_state.pop('notice'))
 if st.session_state.get('notice_error'):st.error(st.session_state.pop('notice_error'))
-if connected and st.session_state.get('dirty') and not st.session_state.demo:st.caption('● Sheets에 저장하지 않은 변경이 있습니다 · 사이드바(») 「Sheets에 저장」')
+if connected and st.session_state.get('dirty') and not st.session_state.demo and page not in REDESIGNED:st.caption('● Sheets에 저장하지 않은 변경이 있습니다 · 사이드바(») 「Sheets에 저장」')
 result=st.session_state.get('valued');view=result['view'] if result and result['date']==str(day) else None
 if page in ['이번달','월말 리밸런싱','월말 점검','리밸런싱','기록']:
     if view is None:st.info('예시(DEMO) 화면입니다. 사이드바(») 「종가 조회」로 가격을 불러오거나, 설정에서 실제 전략과 자산을 입력하세요.')
     else:
         for error in result['errors']:st.warning(error)
 
-if page=='이번달' and view is not None:
-    problems=[r['code'] for r in checkup.check(st.session_state.holdings,st.session_state.strategies,view) if r['status']=='문제']
-    if problems:st.warning(f'점검이 필요한 계좌 {len(problems)}개({", ".join(problems)}) · 설정 › 계좌 점검에서 확인하세요.')
-    complete=view.value.notna().all();record=m.last_record(st.session_state.snapshots,day)
+def go_rebalance():st.session_state.page='월말 리밸런싱'
+def home_view(name):st.session_state.home_view=name
+
+def monthly_chart(data,by,year):
+    """100% stacked bar per month (1–12), validated stacking order, 2px white gaps, total (억) above each bar."""
+    order=ui.STRATEGY_ORDER if by=='strategy' else ui.ASSET_ORDER
+    keys=[k for k in order if k in set(data.key)]+[k for k in dict.fromkeys(data.key) if k not in order]
+    months=[pd.Period(f'{year}-{i:02d}','M') for i in range(1,13)];labels=[f'{i}월' for i in range(1,13)]
+    totals=data.groupby('month').value.sum().reindex(months)
+    fig=go.Figure()
+    for k in keys:
+        d=data[data.key.eq(k)].groupby('month').value.sum().reindex(months)
+        name=f'{data.loc[data.key.eq(k),"account"].iloc[-1]} {k}' if by=='strategy' and k in set(data.key) else k
+        color=ui.strategy_color(k) if by=='strategy' else ui.asset_color(k)
+        fig.add_bar(x=labels,y=d.values,name=name,marker=dict(color=color,line=dict(color='#fff',width=2)),customdata=(d/totals*100).values,
+                    hovertemplate='%{x} · '+name+'<br>%{y:,.0f}원 · %{customdata:.1f}%<extra></extra>')
+    fig.update_layout(barmode='stack',barnorm='percent',height=300,bargap=.28,margin=dict(t=26,b=8,l=4,r=4),paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',
+                      font=dict(family='Pretendard, sans-serif',color='#191F28',size=12),showlegend=True,legend=dict(orientation='h',y=-.12,x=0,font=dict(size=11),traceorder='normal'),
+                      yaxis=dict(visible=False,range=[0,100]),xaxis=dict(showgrid=False,tickfont=dict(color='#8B95A1')),hoverlabel=dict(font=dict(family='Pretendard')))
+    for label,t in zip(labels,totals.values):
+        if pd.notna(t):fig.add_annotation(x=label,y=100,yshift=12,text=f'{t/1e8:.2f}',showarrow=False,font=dict(size=10,color='#191F28'))
+    return fig
+
+if page=='이번달' and view is not None and st.session_state.get('home_view')=='monthly':
+    st.button('← 홈',on_click=home_view,args=('',))
+    by=st.radio('묶기',['계좌(전략)별','자산군별'],horizontal=True,key='monthly_by',label_visibility='collapsed')
+    data=home.monthly(st.session_state.snapshots,'strategy' if by.startswith('계좌') else 'category')
+    if data.empty:
+        st.markdown(ui.card('<h2>월별 기록</h2><p class="ds-cap">아직 기록이 없어요. 월말 리밸런싱 마지막 단계에서 「이번 달 마감」을 누르면 그달 막대가 하나씩 쌓여요.</p>'),unsafe_allow_html=True)
+    else:
+        years=sorted({m.year for m in data.month},reverse=True);year=st.selectbox('연도',years,key='monthly_year') if len(years)>1 else years[0]
+        data=data[data.month.map(lambda m:m.year)==year]
+        with st.container(key='monthly_card'):
+            st.markdown(f'<h2 class="ds-h2">월별 기록</h2><p class="ds-cap">{year}년 · 막대 위 숫자 = 총자산(억) · 막대를 누르면 아래에 금액이 나와요</p>',unsafe_allow_html=True)
+            event=st.plotly_chart(monthly_chart(data,'strategy' if by.startswith('계좌') else 'category',year),use_container_width=True,config={'displayModeBar':False},on_select='rerun',selection_mode='points',key='monthly_plot')
+        months=sorted(data.month.unique());picked=months[-1]
+        points=(event or {}).get('selection',{}).get('points',[]) if isinstance(event,dict) else getattr(getattr(event,'selection',None),'points',[]) or []
+        if points:
+            label=points[0].get('x','');hit=[m for m in months if f'{m.month}월'==label]
+            if hit:picked=hit[0]
+        month=data[data.month.eq(picked)].sort_values('value',ascending=False);total=month.value.sum()
+        before=data[data.month.eq(months[months.index(picked)-1])].value.sum() if months.index(picked)>0 else None
+        rows=''.join(f'<li><span><i style="background:{ui.strategy_color(r.key) if by.startswith("계좌") else ui.asset_color(r.key)}"></i>{escape(str(r.account))} <small class="ds-label">{escape(str(r.key)) if by.startswith("계좌") else ""}</small></span><b>{ui.won(r.value,unit=False)} <small class="ds-label">{r.value/total*100:.1f}%</small></b></li>' for r in month.itertuples())
+        st.markdown(ui.card(f'<div class="ds-link"><b class="ds-h2">{picked.year}년 {picked.month}월 말</b>{ui.change(total,before,pct=False)}</div>{ui.won_big(total)}<div class="ds-assets" style="grid-template-columns:1fr"><ul>{rows}</ul></div>'),unsafe_allow_html=True)
+
+elif page=='이번달' and view is not None:
+    checks={r['code']:r for r in checkup.check(st.session_state.holdings,st.session_state.strategies,view)}
+    # Status line, then at most one alert line.
+    saved=st.session_state.get('last_saved')
+    status='● 저장 안 된 변경이 있어요 · 사이드바(») 「Sheets에 저장」' if connected and st.session_state.get('dirty') and not st.session_state.demo else \
+           (f'✓ 시트 저장됨 · 오늘 {saved:%H:%M}' if saved else ('✓ 시트 연결됨' if connected else '시트 미연결 · 전체 백업으로 보관하세요'))
+    st.markdown(f'<p class="ds-status">{status}</p>',unsafe_allow_html=True)
+    flagged=[r for r in checks.values() if r['status']!='정상']
+    if flagged:
+        first=flagged[0];more=f' 외 {len(flagged)-1}개' if len(flagged)>1 else ''
+        st.markdown(f'<div class="ds-alert {"bad" if first["status"]=="문제" else "warn"}">⚠ {escape(str(first["account"]))} — {escape(re.sub(r"\s*\(.*?\)","",re.split(r"\.(?:\s|$)",first["issues"][0][1])[0]))}{more} · 설정 › 계좌 점검에서 확인</div>',unsafe_allow_html=True)
+    # Total card: 전일 / 지난 기록 대비 without 입출금, then principal and returns when 입출금 exists.
+    complete=view.value.notna().all();total=view.value.sum() if complete else None
     prev=view.prev_value.sum() if 'prev_value' in view and view.prev_value.notna().all() else None
-    total=f'{view.value.sum():,.0f}원' if complete else '조회 확인 필요'
-    changes=change_html(view.value.sum() if complete else None,prev,'전일 대비')+change_html(view.value.sum() if complete else None,record[1] if record else None,f'지난 기록({record[0]}) 대비' if record else '지난 기록 대비')
-    st.markdown(f'<section class="total-card"><span>총자산 · 원화 환산</span><strong>{total}</strong><div class="changes">{changes}</div><small>{view.strategy.nunique()}개 전략 · {day} 기준</small></section>',unsafe_allow_html=True)
-    st.caption('전일 대비는 같은 수량으로 직전 거래일 종가와 비교합니다. 지난 기록 대비는 「기록」에서 확정한 평가와 비교하며, 입출금과 매매가 포함됩니다.')
-    cards=[]
-    for code,sub in view.groupby('strategy',sort=False):
-        ok=sub.value.notna().all();amount=f'{sub.value.sum():,.0f}원' if ok else '조회 확인 필요';lines=[]
-        prev_sub=sub.prev_value.sum() if 'prev_value' in sub and sub.prev_value.notna().all() else None
-        before=record[2].get(code) if record else None
-        diffs=change_html(sub.value.sum() if ok else None,prev_sub,'전일')+change_html(sub.value.sum() if ok else None,before,'지난 기록')
-        for r in sub.to_dict('records'):
-            value='—' if pd.isna(r['value']) else f'{r["value"]:,.0f}원';weight='—' if pd.isna(r['weight']) else weight_html(r['weight'],r['target_pct'])
-            lines.append(f'<div class="asset-line"><span>{escape(r["name"])}<small>{escape(r["ticker"])} · {escape(r["price_date"])}</small></span><span>{value}</span><b>{weight}</b></div>')
-        cards.append(f'<article class="strategy-card account-card"><div class="card-top"><h3>{escape(str(sub.account.iloc[0]))}</h3><span>{escape(code)}</span></div><div class="card-amount">{amount}</div><div class="changes">{diffs}</div><details><summary>상세 · {len(sub)}종목</summary><div class="asset-head"><span>종목</span><span>평가액</span><span>비중</span></div>{"".join(lines)}<p class="weight-legend">비중 색: 빨강 목표 초과 · 초록 같음 · 파랑 미달</p></details></article>')
-    st.markdown('<div class="strategy-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
+    record=m.last_record(st.session_state.snapshots,day)
+    since=None if not record or total is None else record[1]+performance.net_flow(st.session_state.cashflows,record[0],day)
+    rec_label=f'{pd.Timestamp(record[0]).month}월 말' if record else '지난 기록'
+    perf=performance.summary(total,st.session_state.cashflows,day) if total is not None else None
+    price_day=max(view.price_date.replace('',pd.NA).dropna(),default=str(day))
+    stats=('<div class="ds-stats">'
+           f'<div><span class="ds-label">투자 원금</span><b>{ui.won(perf["principal"],unit=False)}</b></div>'
+           f'<div><span class="ds-label">총 수익률</span><b class="{"up" if (perf["return_pct"] or 0)>0 else "down"}">{"—" if perf["return_pct"] is None else f"{perf['return_pct']:+.1f}%"}</b></div>'
+           f'<div><span class="ds-label">연환산</span><b class="{"up" if (perf["annual_pct"] or 0)>0 else "down"}">{"1년 뒤부터" if perf["annual_pct"] is None else f"{perf['annual_pct']:+.1f}%"}</b></div></div>') if perf else \
+          '<p class="ds-cap" style="margin-top:12px">입출금을 기록하면 투자 원금 · 총 수익률 · 연환산 수익률이 나와요.</p>'
+    st.markdown(ui.card(f'<span class="ds-label">총자산</span>{ui.won_big(total)}<div>{ui.change(total,prev,"전일")}&nbsp;&nbsp;{ui.change(total,since,rec_label)}</div>'
+                        f'<p class="ds-cap">{"입금 제외 수익 기준 · " if record else ""}{pd.Timestamp(price_day):%m.%d} 종가 기준</p>{stats}'),unsafe_allow_html=True)
+    # This month's to-do: judged accounts whose proposal differs from now.
+    decisions=[d for d in rules.evaluate(view,day,prices,st.session_state.strategies) if d['status']!='판정 없음']
+    todo=[d for d in decisions if d['changed']];blocked=[d for d in decisions if d['status']=='계산 불가']
+    with st.container(key='todo_card'):
+        n=len(todo);sub=' · '.join(f'{d["code"]} {home.todo_kind(d)}' for d in todo) or '판정한 계좌 모두 지금 비중 그대로'
+        if blocked:sub+=f' · 계산 불가 {len(blocked)}'
+        st.markdown(f'<div class="ds-todo"><span class="ds-todo-n {"none" if not n else ""}">{n}</span><span><b>{"이번 달 할 일 "+str(n)+"개" if n else "이번 달 할 일 없음"}</b><small>{escape(sub)}</small></span></div>',unsafe_allow_html=True)
+        st.button('월말 리밸런싱 시작 ›',on_click=go_rebalance,key='todo_go',use_container_width=True)
+    # Accounts, asset classes.
+    judged={d['code']:True for d in decisions}
+    day_change={c:(s.value.sum()/s.prev_value.sum()-1)*100 if 'prev_value' in s and s.prev_value.notna().all() and s.prev_value.sum() else None for c,s in view.groupby('strategy')}
+    st.markdown(ui.card(f'<div class="ds-link"><h2>계좌</h2><span class="ds-label">{view.strategy.nunique()}개</span></div>{home.account_list(view,judged,checks,day_change)}<p class="ds-cap">줄을 누르면 목표·현재 도넛과 종목 막대가 펼쳐져요</p>'),unsafe_allow_html=True)
+    if complete:st.markdown(ui.card(f'<div class="ds-link"><h2>자산군</h2><span class="ds-label">총자산 기준</span></div>{home.asset_card(view)}'),unsafe_allow_html=True)
+    # Monthly record and broker check entry points.
+    data=home.monthly(st.session_state.snapshots)
+    with st.container(key='monthly_link'):
+        months=sorted(data.month.unique()) if not data.empty else []
+        first_last=f' · 첫 달 대비 {ui.change(data[data.month.eq(months[-1])].value.sum(),data[data.month.eq(months[0])].value.sum(),pct=False)}' if len(months)>1 else ''
+        st.markdown(f'<div class="ds-link"><span><b>월별 기록</b><small>{len(months)}개월 기록{first_last if months else " · 「이번 달 마감」부터 쌓여요"}</small></span></div>',unsafe_allow_html=True)
+        st.button('월별 기록 보기 ›',on_click=home_view,args=('monthly',),key='monthly_go',use_container_width=True)
     with st.expander('증권사 총액과 대조하기'):
-        st.caption('증권사 앱의 계좌 총액을 입력하면 앱 평가액과 비교합니다. 입력값은 저장하지 않습니다. 차이가 0.5% 이하면 「일치」입니다.')
+        st.caption('증권사 앱의 계좌 총액을 넣으면 앱 평가액과 비교해요. 저장하지 않아요. 차이 0.5% 이하면 「일치」.')
         accounts=view.account.drop_duplicates().tolist();entered={}
         for i,account in enumerate(accounts):
             entered[account]=st.number_input(f'{account} 증권사 총액(원)',min_value=0.,step=10000.,format='%.0f',key=f'broker_total{i}')
         result_table=m.reconcile(view,entered)
         if not result_table.empty:
-            st.dataframe(result_table,hide_index=True,use_container_width=True,column_config={**{c:st.column_config.NumberColumn(format='localized') for c in ['앱 평가액','증권사 총액','차이']},'차이(%)':st.column_config.NumberColumn(format='%+.2f%%')})
-            if (result_table['판정']=='차이 큼').any():st.warning('차이가 큰 계좌가 있습니다. 설정에서 보유수량과 현금을 확인하세요. 장중이면 가격 시점 차이일 수 있습니다.')
-    st.subheader('자산군 분포')
-    if complete:
-        categories=m.category_distribution(view)
-        if categories.empty:st.caption('평가액이 있는 자산이 없습니다.')
-        else:
-            chart=px.pie(categories,names='category',values='value',hole=.74,
-                color_discrete_sequence=['#3567E8','#32999D','#9B76CE','#B7C6DA','#F4B860','#E78E9A','#8CABC2'])
-            chart.update_traces(textinfo='percent',textposition='inside',
-                hovertemplate='%{label}<br>%{value:,.0f}원 · %{percent}<extra></extra>')
-            chart.update_layout(height=340,margin=dict(t=15,b=15,l=30,r=30),showlegend=True,
-                paper_bgcolor='rgba(0,0,0,0)',font=dict(family='Pretendard, sans-serif',color='#1C2E49',size=14),legend=dict(orientation='h',y=-.05,x=.5,xanchor='center'))
-            with st.container(border=True):
-                st.plotly_chart(chart,use_container_width=True,config={'displayModeBar':False})
-    else:st.caption('모든 종가와 환율 조회를 완료하면 분포를 표시합니다.')
+            rows=''.join(f'<li><span>{escape(str(r["계좌"]))}<small class="ds-label"> 앱 {ui.won(r["앱 평가액"],unit=False)} · 증권사 {ui.won(r["증권사 총액"],unit=False)}</small></span><b>{ui.tag("일치","same") if r["판정"]=="일치" else ui.tag(f"{r['차이(%)']:+.1f}%","warn")}</b></li>' for _,r in result_table.iterrows())
+            st.markdown(f'<div class="ds-assets" style="grid-template-columns:1fr"><ul>{rows}</ul></div>',unsafe_allow_html=True)
 
 elif page=='월말 리밸런싱' and view is not None:
     steps=['2 · 할 일','3 · 체결','4 · 마감']
