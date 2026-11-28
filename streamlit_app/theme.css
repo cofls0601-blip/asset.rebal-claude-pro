@@ -198,3 +198,5 @@ html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important}
 .ticket-amount b.buy{color:var(--up)}.ticket-amount b.sell{color:var(--down)}
 .ticket-side.buy{background:var(--up)!important}.ticket-side.sell{background:var(--down)!important}
 .ds-order.done{background:#F7F8FA}.ds-order.done .ds-order-icon{background:#C5CBD3}
+/* Streamlit pulls the next widget up under a markdown block; keep captions clear of it. */
+[data-testid="stMarkdownContainer"] .ds-cap:last-child,[data-testid="stMarkdownContainer"] > div > .ds-link:last-child{margin-bottom:12px!important}

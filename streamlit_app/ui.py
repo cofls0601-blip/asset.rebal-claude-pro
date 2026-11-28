@@ -102,7 +102,7 @@ def order_line(side,name,shares,amount):
     """One-line rebalancing: ↓ 매도 41주 · 약 537만 (blue) / ↑ 매수 (red)."""
     kind='sell' if side=='매도' else 'buy'
     return (f'<div class="ds-order {kind}"><span class="ds-order-icon">{"↓" if kind=="sell" else "↑"}</span><b>{escape(name)}</b>'
-            f'<span class="ds-order-act">{escape(side)} {shares:g}주 · 약 {won(amount,unit=False)}</span></div>')
+            f'<span class="ds-order-act">{escape(side)} {shares:,g}주 · 약 {won(amount,unit=False)}</span></div>')
 
 
 def steps(current,names=('1 기준일','2 할 일','3 체결','4 마감')):
