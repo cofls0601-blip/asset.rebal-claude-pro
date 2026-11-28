@@ -230,11 +230,13 @@ def valuation(h,day,fetch=fetch_prices):
     return v,errors
 
 
-def action(h,code,ticker,q,side,day,before,after):
+def action(h,code,ticker,q,side,day,before,after,price=None,fx=1.):
+    """One fill for the 거래 기록 tab; price is in the trading currency, the amount in won."""
     r=h.loc[h.strategy.eq(code)&h.ticker.eq(ticker)].iloc[0]
-    return dict(date=str(day),saved_at=pd.Timestamp.now(tz='UTC').isoformat(),strategy=code,ticker=ticker,name=r['name'],side=side,
+    return dict(date=str(day),saved_at=pd.Timestamp.now(tz='UTC').isoformat(),strategy=code,account=r['account'],ticker=ticker,name=r['name'],side=side,
         planned_shares=q if side=='매수' else -q,actual_shares=q,planned_amount=None,done=True,reason='수동 수량 조정',memo=f'{before:g} → {after:g}',
-        execution_id=uuid.uuid4().hex,execution_date=str(day),actual_price=None,actual_amount=None,status='완료',currency='USD' if r.market=='US' else 'KRW')
+        execution_id=uuid.uuid4().hex,execution_date=str(day),actual_price=price,actual_amount=None if price is None else round(q*price*fx),
+        status='완료',currency='USD' if r.market=='US' else 'KRW')
 
 
 def revalue(view,holdings):

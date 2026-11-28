@@ -113,3 +113,25 @@ class ErrorDetailTests(unittest.TestCase):
         with self.assertRaisesRegex(SheetsError,'시트에 쓰는 중 오류: Data validation violated'):save_workspace(URL,SECRET,make_workspace(),'base',transport=t)
         reply.pop('detail')
         with self.assertRaisesRegex(SheetsError,'^저장 완료를 확인하지 못했습니다. 같은 작업을 재시도하세요$'):save_workspace(URL,SECRET,make_workspace(),'base',transport=t)
+
+
+class SheetLayoutTests(unittest.TestCase):
+    def test_korean_headers_round_trip(self):
+        w=make_workspace();w['actions']=pd.DataFrame([dict(date='2026-11-28',account='하나',side='매수',name='KODEX 200',actual_shares=3,
+                                                          actual_price=40000,actual_amount=120000,strategy='KSP',ticker='069500',extra_note='x')])
+        t=Transport(empty_workspace());save_workspace(URL,SECRET,w,'base',transport=t)
+        cols=t.payload['columns']
+        self.assertEqual(cols['holdings'][:5],['계좌','코드','종목명','종목코드','수량'])
+        self.assertEqual(cols['snapshots'][:6],['날짜','계좌','종목명','수량','평가액','전체 비중(%)'])
+        self.assertEqual(cols['cashflows'][:4],['날짜','계좌','금액','메모'])
+        self.assertNotIn('계획 수량',cols['actions'])          # empty optional column left out
+        self.assertEqual(cols['actions'][-1],'extra_note')     # unknown filled column kept at the end
+        self.assertEqual(t.payload['tables']['holdings'][0]['종목코드'],w['holdings'].ticker.iloc[0])
+        restored,_=load_workspace(URL,SECRET,transport=t)
+        self.assertEqual(list(restored['holdings'].columns[:3]),['strategy','account','ticker'])
+        self.assertEqual(restored['actions'].actual_price.astype(float).tolist(),[40000.])
+
+    def test_english_headers_still_load(self):
+        t=Transport(make_workspace())  # an older sheet written before the Korean layout
+        restored,_=load_workspace(URL,SECRET,transport=t)
+        self.assertFalse(restored['holdings'].empty)

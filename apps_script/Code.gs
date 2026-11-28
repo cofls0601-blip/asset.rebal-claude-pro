@@ -1,17 +1,23 @@
 // Bound to the user's spreadsheet. No Cloud Console or service account setup.
 // Apps Script itself uses a Google-managed default Cloud project.
 // Script Properties: SHEETS_SECRET (random, >=24 characters), SPREADSHEET_ID.
+// Tabs people read, in Korean; tabs only the app uses start with '_' and sit at the end (2026-11-25 layout).
 const TABLE_NAMES = {
-  holdings: 'Holdings', strategies: 'Strategies', snapshots: 'Snapshots',
-  actions: 'Actions', cashflows: 'Cashflows', category_targets: 'CategoryTargets',
-  evaluations: 'Evaluations', strategy_versions: 'StrategyVersions'
+  holdings: '보유', snapshots: '월별 기록', actions: '거래 기록', cashflows: '입출금',
+  strategies: '_전략 설정', strategy_versions: '_전략 이력'
 };
+// Earlier English tabs: read until the first save in the new layout, then kept as '_예전_…' copies.
+const LEGACY_NAMES = {
+  holdings: 'Holdings', snapshots: 'Snapshots', actions: 'Actions', cashflows: 'Cashflows',
+  strategies: 'Strategies', strategy_versions: 'StrategyVersions'
+};
+const RETIRED = ['CategoryTargets', 'Evaluations'];
 const STATE = '_RebalanceState';
 const RECOVERY = '_RebalanceRecovery';
 
 function doGet() {
   // Opening the /exec URL in a browser shows this version, to confirm the pasted script is deployed.
-  return jsonResponse({ok: true, service: 'rebalance', protocol: 1, version: '2026-11-25'});
+  return jsonResponse({ok: true, service: 'rebalance', protocol: 1, version: '2026-11-28'});
 }
 
 function doPost(e) {
@@ -55,6 +61,7 @@ function doPost(e) {
       const savedToken = digest(after);
       writeState(ss, {pending: '', token: savedToken, request_id: body.request_id});
       SpreadsheetApp.flush();
+      tidyTabs(ss);
       // Retain the preceding complete generation as an additional recovery copy.
       return jsonResponse({ok: true, token: savedToken, request_id: body.request_id});
     } catch (err) {
@@ -70,6 +77,24 @@ function doPost(e) {
 }
 
 function sheet(ss, name) { return ss.getSheetByName(name) || ss.insertSheet(name); }
+// After a verified save: keep old English tabs as '_예전_…' copies (never delete), then order the tabs:
+// the four people read first, everything starting with '_' last.
+function tidyTabs(ss) {
+  try {
+    Object.keys(LEGACY_NAMES).map(k => LEGACY_NAMES[k]).concat(RETIRED).forEach(name => {
+      const tab = ss.getSheetByName(name);
+      if (!tab) return;
+      let copy = '_예전_' + name, n = 2;
+      while (ss.getSheetByName(copy)) copy = '_예전_' + name + ' ' + n++;
+      tab.setName(copy);
+    });
+    ['보유', '월별 기록', '거래 기록', '입출금'].forEach((name, i) => {
+      const tab = ss.getSheetByName(name);
+      if (tab) { ss.setActiveSheet(tab); ss.moveActiveSheet(i + 1); }
+    });
+    ss.getSheets().filter(t => t.getName().startsWith('_')).forEach(tab => { ss.setActiveSheet(tab); ss.moveActiveSheet(ss.getNumSheets()); });
+  } catch (_) { /* Cosmetic only: the save itself already succeeded. */ }
+}
 function readState(ss) {
   const tab = ss.getSheetByName(STATE);
   const raw = tab ? tab.getRange(1, 1).getValue() : '';
@@ -79,7 +104,7 @@ function writeState(ss, value) { sheet(ss, STATE).getRange(1, 1).setValue(JSON.s
 function readWorkspace(ss) {
   const workspace = {schema_version: 3, tables: {}, columns: {}};
   Object.keys(TABLE_NAMES).forEach(key => {
-    const tab = ss.getSheetByName(TABLE_NAMES[key]);
+    const tab = ss.getSheetByName(TABLE_NAMES[key]) || ss.getSheetByName(LEGACY_NAMES[key]);
     const rows = tab && tab.getLastRow() ? tab.getDataRange().getValues() : [];
     const header = rows.length ? rows[0].map(String) : [];
     if (header.some(x => !x) || new Set(header).size !== header.length) throw new Error('invalid_header');

@@ -17,7 +17,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2026-11-25 · 시트 스크립트 새 버전 대응'
+APP_VERSION='2026-11-28 · 시트 새 구성(한국어 탭)'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -257,7 +257,7 @@ elif page=='월말 리밸런싱' and view is not None:
                         if st.button('체결 반영',key='fill'+key,use_container_width=True):
                             try:
                                 updated,before,after=apply_fill(st.session_state.holdings,code,o['ticker'],o['side'],q,px_in*o['fx'])
-                                log=m.action(updated,code,o['ticker'],q,o['side'],day,before,after)
+                                log=m.action(updated,code,o['ticker'],q,o['side'],day,before,after,px_in,o['fx'])
                                 install({'holdings':updated,'actions':pd.concat([st.session_state.actions,pd.DataFrame([log])],ignore_index=True)})
                                 st.session_state.valued={'date':str(day),'view':m.revalue(view,updated),'errors':result['errors']}
                                 error=persist()

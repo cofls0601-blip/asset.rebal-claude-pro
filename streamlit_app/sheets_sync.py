@@ -34,6 +34,44 @@ def request(url, secret, action, *, transport=None, **payload):
     return data
 
 
+# Korean headers for the tabs people read (2026-11-28 layout). Core columns always appear, in this order;
+# optional ones only when some row has a value; unknown filled columns are kept at the end in English.
+HEADERS={
+    'holdings':dict(core=[('account','계좌'),('strategy','코드'),('name','종목명'),('ticker','종목코드'),('shares','수량'),
+                          ('target_pct','목표(%)'),('category','분류'),('role','역할'),('market','시장')],
+                    optional=[('classification_json','혼합 분류')]),
+    'snapshots':dict(core=[('date','날짜'),('account','계좌'),('name','종목명'),('shares','수량'),('value','평가액'),('weight_pct','전체 비중(%)'),
+                           ('strategy','코드'),('ticker','종목코드'),('category','분류'),('close','종가'),('fx','환율'),
+                           ('account_weight_pct','계좌 내 비중(%)'),('target_pct','목표(%)'),('memo','메모'),('revision','개정'),
+                           ('price_date','가격 날짜'),('saved_at','저장 시각')],
+                     optional=[('strategy_version','전략 버전'),('role','역할'),('schema_version','형식 버전'),('run_id','실행 ID'),
+                               ('record_id','기록 ID'),('revision_reason','개정 사유'),('execution_target_pct','실행 목표(%)'),
+                               ('fx_date','환율 날짜'),('price_source','가격 출처'),('strategy_json','전략 JSON'),('classification_json','혼합 분류')]),
+    'actions':dict(core=[('date','날짜'),('account','계좌'),('side','구분'),('name','종목명'),('actual_shares','수량'),('actual_price','체결가'),
+                         ('actual_amount','금액'),('strategy','코드'),('ticker','종목코드'),('currency','통화'),('memo','메모'),
+                         ('reason','사유'),('status','상태'),('execution_id','체결 ID'),('saved_at','저장 시각')],
+                   optional=[('planned_shares','계획 수량'),('planned_amount','계획 금액'),('done','완료'),('fx','환율'),
+                             ('execution_date','체결일'),('order_id','주문 ID'),('run_id','실행 ID'),('schema_version','형식 버전')]),
+    'cashflows':dict(core=[('date','날짜'),('account','계좌'),('amount','금액'),('memo','메모'),('strategy','코드')],
+                     optional=[('kind','구분'),('transfer_id','이체 ID')]),
+}
+TO_EN={k:{ko:en for en,ko in v['core']+v['optional']} for k,v in HEADERS.items()}
+
+
+def sheet_frame(key,frame):
+    """The frame as it goes to the sheet: Korean headers, readable column order."""
+    if key not in HEADERS:return frame
+    spec=HEADERS[key];filled=lambda c:c in frame and frame[c].fillna('').astype(str).str.strip().ne('').any()
+    known={en for en,_ in spec['core']+spec['optional']}
+    cols=[en for en,_ in spec['core']]+[en for en,_ in spec['optional'] if filled(en)]+[c for c in frame.columns if c not in known and filled(c)]
+    names={en:ko for en,ko in spec['core']+spec['optional']}
+    return frame.reindex(columns=cols).rename(columns=names)
+
+
+def app_names(key,columns):
+    return [TO_EN.get(key,{}).get(c,c) for c in columns]
+
+
 KINDS={'number':'숫자','text':'글자','boolean':'참/거짓','empty':'빈칸'}
 
 
@@ -60,6 +98,10 @@ def load_workspace(url,secret,*,transport=None):
     for k in TABLES:
         if not payload.get('columns',{}).get(k) and not payload.get('tables',{}).get(k):
             payload.setdefault('columns',{})[k]=list(defaults[k].columns)
+    for k in TABLES:  # Korean headers (2026-11-28 layout) back to the app's names; English headers pass through
+        names=dict(zip(payload['columns'].get(k,[]),app_names(k,payload['columns'].get(k,[]))))
+        payload['columns'][k]=[names[c] for c in payload['columns'].get(k,[])]
+        payload.setdefault('tables',{})[k]=[{names.get(c,c):v for c,v in row.items()} for row in payload.get('tables',{}).get(k,[])]
     workspace=restore_backup(json.dumps(payload,ensure_ascii=False).encode())
     return workspace,data['token']
 
@@ -88,7 +130,8 @@ def cell_key(value):
 
 def save_workspace(url,secret,workspace,token,*,transport=None):
     if not token:raise SheetsError('저장하기 전에 Sheets 원장을 읽어야 합니다')
-    payload=json.loads(backup_bytes(workspace))
+    sent={k:sheet_frame(k,workspace[k]) for k in TABLES}
+    payload=json.loads(backup_bytes(sent))
     payload.pop('drafts',None)
     payload['tables']={k:[{c:cell_text(v) for c,v in row.items()} for row in rows] for k,rows in payload['tables'].items()}
     encoded=json.dumps(payload,sort_keys=True,ensure_ascii=False,separators=(',',':'))
@@ -102,9 +145,11 @@ def save_workspace(url,secret,workspace,token,*,transport=None):
     if observed_token!=result['token']:
         raise SheetsError('저장 후 시트가 다시 변경되었습니다. 현재 작업을 백업하고 최신 자료를 읽으세요')
     for key in TABLES:
-        # Compare cell texts: loading turns some text back into numbers/booleans, others stay text.
-        expected=workspace[key].reset_index(drop=True).astype(object).map(cell_key)
-        actual=saved[key].reset_index(drop=True).astype(object).map(cell_key)
+        if key in ('category_targets','evaluations'):continue  # retired tabs (2026-11-28); the new script ignores them
+        # Compare cell texts on the columns sent: loading turns some text back into numbers/booleans, others stay text.
+        cols=app_names(key,list(sent[key].columns))
+        expected=sent[key].set_axis(cols,axis=1).reset_index(drop=True).astype(object).map(cell_key)
+        actual=saved[key].reindex(columns=cols).reset_index(drop=True).astype(object).map(cell_key)
         if list(expected.columns)!=list(actual.columns) or not expected.equals(actual):
             raise SheetsError('저장 후 '+key+' 내용이 일치하지 않습니다. 원본 백업을 보존하세요')
     return observed_token

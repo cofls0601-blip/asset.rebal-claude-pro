@@ -34,10 +34,15 @@ class Sheet {
   getMaxRows() { return 10000; }
   getMaxColumns() { return 100; }
   setFrozenRows() {}
+  getName() { return this.name; }
+  setName(n) { tabs.delete(this.name); this.name=n; tabs.set(n,this); return this; }
 }
 const tabs = new Map();
+const order = []; let active = null; // tab order, like the sheet bar at the bottom
 const spreadsheet = {
-  getSheetByName:n=>tabs.get(n), insertSheet:n=>{const s=new Sheet(n);tabs.set(n,s);return s;},
+  getSheetByName:n=>tabs.get(n), insertSheet:n=>{const s=new Sheet(n);tabs.set(n,s);order.push(s);return s;},
+  getSheets:()=>order.filter(s=>tabs.get(s.name)===s), getNumSheets:()=>order.filter(s=>tabs.get(s.name)===s).length,
+  setActiveSheet:s=>{active=s;}, moveActiveSheet:pos=>{const live=order.filter(s=>tabs.get(s.name)===s&&s!==active);live.splice(pos-1,0,active);order.length=0;order.push(...live);},
   getSpreadsheetTimeZone:()=> 'Asia/Seoul'
 };
 const secret='test-only-'+'x'.repeat(32);
@@ -67,22 +72,22 @@ assert.equal(call({action:'load'}).workspace.tables.actions.length,1);
 const second=structuredClone(first);second.request_id='b'.repeat(64);
 assert.equal(call(second).error,'conflict');
 second.expected_token=saved.token;second.workspace.tables.holdings[0].shares=20;
-failTab='Actions';assert.equal(call(second).ok,false);
+failTab='거래 기록';assert.equal(call(second).ok,false);
 assert.equal(Number(call({action:'load'}).workspace.tables.holdings[0].shares),10);
 assert.equal(call(second).ok,true);
 // A manual edit changes the token and is not overwritten by a stale session.
-tabs.get('Holdings').data[1][2]=25;
+tabs.get('보유').data[1][2]=25;
 assert.equal(call(second).error,'conflict');
 // Simulate a process interruption with a pending rollback image.
 const before=call({action:'load'});
 context.writeRecovery(spreadsheet,{workspace:before.workspace,state:{}});
 context.writeState(spreadsheet,{pending:'incomplete'});
-tabs.get('Holdings').data[1][2]=999;
+tabs.get('보유').data[1][2]=999;
 const pendingReport=context.diagnoseRecovery();
 assert.equal(pendingReport.state,'pending');
 assert.equal(pendingReport.recovery,'valid');
 assert.equal(pendingReport.current_matches_backup,false);
-assert.equal(tabs.get('Holdings').data[1][2],999); // Diagnosis must not change the source.
+assert.equal(tabs.get('보유').data[1][2],999); // Diagnosis must not change the source.
 assert.equal(Number(call({action:'load'}).workspace.tables.holdings[0].shares),25);
 tabs.get('_RebalanceRecovery').data=[['not-json']];
 context.writeState(spreadsheet,{pending:'incomplete'});
@@ -101,8 +106,22 @@ mangle={from:'GSM',to:'GSMX'};
 const typed2=structuredClone(typed);typed2.tables.strategies[0].target=20;
 const bad=call({action:'save',workspace:typed2,expected_token:ok.token,request_id:'d'.repeat(64)});mangle=null;
 assert.equal(bad.error,'save_failed_retry');
-assert.deepEqual(bad.detail,{stage:'verify',table:'Strategies',row:2,column:'code',sent:'text',sheet:'text'});
+assert.deepEqual(bad.detail,{stage:'verify',table:'_전략 설정',row:2,column:'code',sent:'text',sheet:'text'});
 assert.ok(!JSON.stringify(bad).includes('GSM'));
 assert.equal(Number(call({action:'load'}).workspace.tables.strategies[0].target),12.5); // rolled back
-console.log('Apps Script contract: auth, save, replay, conflict, rollback, recovery, plain-text read-back, error detail passed');
+// Moving an existing English-tab sheet to the 2026-11-28 layout.
+tabs.clear();order.length=0;
+const legacy=spreadsheet.insertSheet('Holdings');legacy.data=[['strategy','ticker','shares'],['GSM','069500','10']];
+spreadsheet.insertSheet('Evaluations').data=[['run_id'],['r1']];spreadsheet.insertSheet('메모');
+const old=call({action:'load'});assert.equal(old.workspace.tables.holdings[0].ticker,'069500'); // read from the English tab
+const moved=call({action:'save',workspace:old.workspace,expected_token:old.token,request_id:'e'.repeat(64)});
+assert.equal(moved.ok,true,JSON.stringify(moved));
+assert.deepEqual(tabs.get('보유').data[1],['GSM','069500','10']);
+assert.deepEqual(tabs.get('_예전_Holdings').data[1],['GSM','069500','10']); // original kept as a copy
+assert.ok(tabs.get('_예전_Evaluations') && !tabs.get('Evaluations'));
+const names=spreadsheet.getSheets().map(s=>s.getName());
+assert.deepEqual(names.slice(0,4),['보유','월별 기록','거래 기록','입출금']);
+assert.ok(names.indexOf('메모')<names.indexOf('_전략 설정') && names.slice(names.indexOf('_전략 설정')).every(n=>n.startsWith('_')),names.join());
+assert.equal(call({action:'load'}).workspace.tables.holdings[0].ticker,'069500');
+console.log('Apps Script contract: auth, save, replay, conflict, rollback, recovery, plain-text read-back, error detail, 2026-11-28 tab layout passed');
 
