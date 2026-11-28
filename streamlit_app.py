@@ -19,7 +19,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2026-11-28 · 디자인 2.0 홈'
+APP_VERSION='2026-11-28 · 디자인 2.0 홈·월말 리밸런싱'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -142,12 +142,13 @@ with st.sidebar:
 
 # Menu sits at the top so it is visible on phones without opening the sidebar.
 page=st.radio('메뉴',['이번달','월말 리밸런싱','월말 점검','리밸런싱','주문안','기록','설정'],horizontal=True,key='page',label_visibility='collapsed')
-REDESIGNED=('이번달',)  # pages already in design 2.0: no big title, own status lines
+REDESIGNED=('이번달','월말 리밸런싱')  # pages already in design 2.0: no big title, own status lines
 if page not in REDESIGNED:
     st.markdown('<div class="eyebrow">YOUR MONTHLY ALLOCATION</div>',unsafe_allow_html=True)
     st.title(page)
 if page=='월말 리밸런싱':
-    day=st.date_input('1 · 기준일 (리밸런싱하는 날)',today,max_value=today,key='rebal_day',help='고른 날의 종가를 이번 달 월말 종가로 보고 판정합니다.')
+    # The date lives in its own key so it survives steps where the date picker is not drawn.
+    day=st.session_state.setdefault('rebal_date',today)
 # Prices load by themselves (no button) once real holdings are in; the DEMO workspace waits for the button.
 current=st.session_state.get('valued')
 if page!='설정' and (page=='월말 리밸런싱' or not st.session_state.demo) and (not current or current['date']!=str(day)):
@@ -265,83 +266,140 @@ elif page=='이번달' and view is not None:
             st.markdown(f'<div class="ds-assets" style="grid-template-columns:1fr"><ul>{rows}</ul></div>',unsafe_allow_html=True)
 
 elif page=='월말 리밸런싱' and view is not None:
-    steps=['2 · 할 일','3 · 체결','4 · 마감']
-    if st.session_state.get('goto_step'):st.session_state.rebal_step=st.session_state.pop('goto_step')
-    step=st.radio('단계',steps,horizontal=True,key='rebal_step',label_visibility='collapsed')
-    confirmed=st.session_state.setdefault('rebal_confirmed',[])
+    def goto(n):st.session_state.rstep=n
+    def set_date(d):st.session_state.rebal_date=d
+    def nav(back,label,target,key,disabled=False):
+        """이전 / 다음 buttons side by side at the bottom of a step."""
+        with st.container(key='nav_'+key):
+            a,b=st.columns([1,2])
+            if back:a.button('이전',on_click=goto,args=(back,),key='prev_'+key,use_container_width=True)
+            return b.button(label,type='primary',key='next_'+key,use_container_width=True,disabled=disabled,on_click=None if target is None else goto,args=() if target is None else (target,))
+    step=st.session_state.setdefault('rstep',1)
+    confirmed=st.session_state.setdefault('rebal_confirmed',[]);filled=st.session_state.setdefault('rebal_filled',[])
     fractional=dict(zip(st.session_state.strategies.code,st.session_state.strategies.fractional_us)) if 'fractional_us' in st.session_state.strategies else {}
-    if step=='2 · 할 일':
-        st.caption('규칙으로 판정하는 계좌만 나옵니다. 숫자는 지금 종가로 계산한 주식 수이고, 매도한 돈까지 합쳐 살 수 있는 만큼만 매수합니다.')
+    decisions=[d for d in rules.evaluate(view,day,prices,st.session_state.strategies) if d['status']!='판정 없음']
+    todo=[d for d in decisions if d['changed']];same=[d for d in decisions if d['status']=='판정' and not d['changed']];blocked=[d for d in decisions if d['status']=='계산 불가']
+    name_of=dict(zip(view.strategy,view.account))
+    st.markdown(ui.steps(step),unsafe_allow_html=True)
+    if step==1:
+        last=(pd.Timestamp(today)-pd.offsets.BDay(0)).date() if pd.Timestamp(today).dayofweek<5 else (pd.Timestamp(today)-pd.offsets.BDay(1)).date()
+        month_end=(pd.Timestamp(today)+pd.offsets.BMonthEnd(0)).date()
+        with st.container(key='step1_date'):
+            st.markdown(f'<h2 class="ds-h1">{day.month}월 리밸런싱</h2><p class="ds-cap">이 날 종가를 월말 종가로 봅니다</p>',unsafe_allow_html=True)
+            st.date_input('기준일',day,max_value=today,key='rebal_day_input',on_change=lambda:set_date(st.session_state.rebal_day_input))
+            c1,c2,c3=st.columns(3)
+            c1.button('마지막 거래일',on_click=set_date,args=(min(month_end,last),),key='chip_last',use_container_width=True)
+            c2.button('오늘',on_click=set_date,args=(today,),key='chip_today',use_container_width=True)
+            c3.caption('직접 선택은 위 날짜 칸')
+        stocks=view[view.ticker.ne('CASH')];ok=stocks.value.notna()
+        kr=stocks.fx.eq(1)|stocks.fx.isna()
+        loaded=f'{view.price_date.replace("",pd.NA).dropna().max() or day}'
+        rate=view.loc[view.fx.ne(1)&view.fx.notna(),'fx']
+        rows=(f'<li><span>국내 ETF·주식</span><b>{int((ok&kr).sum())} / {int(kr.sum())}</b></li>'
+              f'<li><span>미국 ETF·금시세</span><b>{int((ok&~kr).sum())} / {int((~kr).sum())}</b></li>'
+              f'<li><span>환율</span><b>{"—" if rate.empty else f"{rate.iloc[0]:,.0f}원/$"}</b></li>')
+        status=ui.tag('완료','same') if ok.all() else ui.tag(f'{int((~ok).sum())}개 못 불러옴','bad')
+        st.markdown(ui.card(f'<div class="ds-link"><h2>가격 불러오기</h2>{status}</div><div class="ds-assets" style="grid-template-columns:1fr"><ul>{rows}</ul></div><p class="ds-cap">가격 날짜 {loaded}</p>'),unsafe_allow_html=True)
+        for error in result['errors']:st.warning(error)
+        chips=' '.join(ui.chip(d['code']) for d in decisions) or '없음'
+        st.markdown(ui.card(f'<b>이번 달 판정하는 계좌</b><div style="margin:8px 0">{chips}</div><p class="ds-cap">나머지 계좌는 보유만(판정하지 않음)</p>'),unsafe_allow_html=True)
+        nav(None,'판정 보기',2,'s1')
+    elif step==2:
+        n=len(todo)
+        st.markdown(f'<h2 class="ds-h1">{"이번 달 할 일 "+str(n)+"개" if n else "이번 달 할 일 없음"}</h2><p class="ds-cap">{len(decisions)}개 계좌 판정 · {len(same)}개는 그대로</p>',unsafe_allow_html=True)
         picked={}
-        for d in [d for d in rules.evaluate(view,day,prices,st.session_state.strategies) if d['status']!='판정 없음']:
-            sub=view[view.strategy.eq(d['code'])];orders=[];notes=[]
-            if d['status']=='판정' and d['targets']:orders,notes=plan_orders(sub,d['targets'],bool(fractional.get(d['code'],False)))
-            with st.container(border=True):
-                st.markdown(f'<div class="check-card {"blocked" if d["status"]=="계산 불가" else "judged"}"><div class="card-top"><h3>{escape(str(sub.account.iloc[0]))}</h3><span class="check-badge">{escape(d["code"])}</span></div><p class="check-headline">{escape(d["headline"])}</p></div>',unsafe_allow_html=True)
-                if d['status']=='계산 불가':continue
-                if orders:
-                    st.dataframe(orders_frame(orders),hide_index=True,use_container_width=True,column_config={'예상 금액':st.column_config.NumberColumn(format='localized'),'수량':st.column_config.NumberColumn(format='%g')})
-                    for note in notes:st.warning(note)
-                    picked[d['code']]=(st.checkbox('이 계좌 진행',value=True,key='go'+d['code']),d['targets'])
-                else:st.success('이번 달 할 일 없음')
+        for k,d in enumerate(todo,1):
+            sub=view[view.strategy.eq(d['code'])];orders,notes=plan_orders(sub,d['targets'],bool(fractional.get(d['code'],False)))
+            names=dict(zip(sub.ticker,sub.name));cats=dict(zip(sub.ticker,sub.category))
+            moves=''.join(ui.bar_row(names.get(t,t),'',d['current'].get(t,0),w,ui.asset_color(cats.get(t,''))) for t,w in d['targets'].items() if t!='CASH' and abs(w-d['current'].get(t,0))>.5) if not orders else ''
+            lines=''
+            for o in orders:
+                lines+=ui.order_line(o['side'],o['name'],o['shares'],o['amount'])
+                if o.get('cut'):lines+=f'<p class="ds-cap" style="color:var(--up);margin:-4px 0 6px 52px">현금 부족으로 {o["cut"]:g}주 줄임</p>'
+            cash=float(sub.loc[sub.ticker.eq('CASH'),'value'].sum())+sum(o['amount'] if o['side']=='매도' else -o['amount'] for o in orders);total=float(sub.value.sum())
+            left=f'<div class="ds-link ds-cap" style="font-size:13px;margin-top:6px"><span>매매 후 남는 현금</span><b style="color:var(--text)">{ui.won(cash,unit=False)} ({cash/total*100 if total else 0:.1f}%)</b></div>' if orders else ''
+            with st.container(key=f'judge_{d["code"]}'):
+                st.markdown(f'<div class="ds-link"><span>{ui.chip(d["code"])} <b style="display:inline;font-size:17px">{escape(name_of.get(d["code"],d["code"]))}</b></span><span class="ds-label">{k}/{n}</span></div>'
+                            f'<p style="font-size:16px;font-weight:700;margin:10px 0 2px">{escape(d["headline"])}</p>{moves}{lines}{left}',unsafe_allow_html=True)
                 if d['evidence']:
-                    with st.expander('근거 보기'):table(pd.DataFrame(d['evidence']))
-        if picked and st.button('할 일 확정 → 체결 단계로',type='primary',use_container_width=True):
+                    with st.expander('근거 숫자'):table(pd.DataFrame(d['evidence']))
+                picked[d['code']]=(st.checkbox('이 계좌 진행',value=True,key='go'+d['code']),d['targets'])
+        for d in blocked:st.error(f'{d["code"]} {name_of.get(d["code"],"")}: 계산 불가 · {d["headline"]}')
+        if same:
+            rows=''.join(f'<li><span>{ui.chip(d["code"])} 그대로</span><small class="ds-label">{escape(d["headline"].split("→")[0].strip()[:24])}</small></li>' for d in same)
+            st.markdown(ui.card(f'<div class="ds-assets" style="grid-template-columns:1fr"><ul>{rows}</ul></div>'),unsafe_allow_html=True)
+        go=[c for c,(g,_) in picked.items() if g]
+        if nav(1,f'체결하러 가기 ({len(go)}개 계좌)' if picked else '바로 마감',None,'s2'):
             try:
                 h=st.session_state.holdings
-                for code,(go,targets) in picked.items():
-                    if go:h=rules.apply_targets(h,code,targets)
-                install({'holdings':m.validate_holdings(h)});refresh(day)
-                st.session_state.rebal_confirmed=[c for c,(go,_) in picked.items() if go]
-                error=persist();st.session_state.goto_step='3 · 체결'
-                st.session_state.notice='목표 비중을 확정했습니다. 증권사 앱에서 주문한 뒤 체결을 입력하세요.'+(f' (Sheets 저장 실패: {error})' if error else '')
+                for code,(g,targets) in picked.items():
+                    if g:h=rules.apply_targets(h,code,targets)
+                if go:install({'holdings':m.validate_holdings(h)});refresh(day)
+                st.session_state.rebal_confirmed=go;st.session_state.rebal_filled=[];st.session_state.rstep=3 if go else 4
+                error=persist() if go else None
+                if go:st.session_state['notice_error' if error else 'notice']='목표 비중을 확정했어요. 증권사 앱에서 주문한 뒤 체결을 입력하세요.'+saved_note(error)
                 st.rerun()
             except DataError as e:st.error(str(e))
-    elif step=='3 · 체결':
-        if not confirmed:st.info('2 · 할 일에서 진행할 계좌를 확정하세요. 앱을 다시 열었다면 확정을 한 번 더 누르면 남은 주문만 나옵니다.')
+    elif step==3:
+        remaining={};total_orders=len(filled)
         for code in confirmed:
             sub=view[view.strategy.eq(code)]
-            if sub.empty:continue
-            orders,_=plan_orders(sub,dict(zip(sub.ticker,sub.target_pct)),bool(fractional.get(code,False)))
-            with st.container(border=True):
-                st.markdown(f'<div class="check-card judged"><div class="card-top"><h3>{escape(str(sub.account.iloc[0]))}</h3><span class="check-badge">{escape(code)}</span></div></div>',unsafe_allow_html=True)
-                if not orders:st.success('남은 주문 없음');continue
+            if not sub.empty:remaining[code]=plan_orders(sub,dict(zip(sub.ticker,sub.target_pct)),bool(fractional.get(code,False)))[0];total_orders+=len(remaining[code])
+        st.markdown(f'<h2 class="ds-h1">주문 {total_orders}건 중 {len(filled)}건 반영</h2><p class="ds-cap">증권사 앱에서 체결 후 숫자를 맞춰 주세요</p>',unsafe_allow_html=True)
+        if not confirmed:st.info('2 할 일에서 진행할 계좌를 고르세요. 앱을 다시 열었다면 2단계에서 한 번 더 누르면 남은 주문만 나와요.')
+        for code in confirmed:
+            with st.container(key=f'fillcard_{code}'):
+                st.markdown(f'<div>{ui.chip(code)} <b style="font-size:17px">{escape(name_of.get(code,code))}</b></div><p class="ds-cap">매도 먼저 → 그 돈으로 매수</p>',unsafe_allow_html=True)
+                for f in [f for f in filled if f['code']==code]:
+                    st.markdown(f'<div class="ds-order done"><span class="ds-order-icon">{"↓" if f["side"]=="매도" else "↑"}</span><b>{escape(f["name"])}<small class="ds-cap" style="display:block">{f["shares"]:g}주 × {f["price"]:,.2f} = {f["amount"]:,.0f}원</small></b>{ui.tag("반영됨","same")}</div>',unsafe_allow_html=True)
+                orders=remaining.get(code,[])
+                if not orders:st.markdown('<p class="ds-cap">남은 주문 없음</p>',unsafe_allow_html=True)
                 for i,o in enumerate(orders):
-                    # Compact order ticket like a brokerage app: price and quantity steppers, then the amount.
                     key=f'{code}{i}{st.session_state.revision}';usd=o['fx']!=1  # priced in dollars (valuation decides the market from the ticker)
-                    with st.container(key='ticket'+key):
-                        side_class='buy' if o['side']=='매수' else 'sell'
-                        st.markdown(f'<div class="ticket-head"><span class="ticket-side {side_class}">{o["side"]}</span><b>{escape(o["name"])}</b></div>',unsafe_allow_html=True)
-                        unit='달러' if usd else '원'
-                        px_in=st.number_input(f'체결가 ({unit})',min_value=0.,value=float(o['close']),step=.01 if usd else 5.,format='%.2f' if usd else '%.0f',key='px'+key)
+                    side='buy' if o['side']=='매수' else 'sell'
+                    with st.container(key=f'ticket_{side}_{key}'):
+                        st.markdown(f'<div class="ticket-head"><span class="ticket-side {side}">{o["side"]}</span><b>{escape(o["name"])}</b><small class="ds-label" style="margin-left:auto">{escape(o["ticker"])}</small></div>',unsafe_allow_html=True)
+                        px_in=st.number_input(f'체결가 ({"달러" if usd else "원"})',min_value=0.,value=float(o['close']),step=.01 if usd else 5.,format='%.2f' if usd else '%.0f',key='px'+key)
                         q=st.number_input('수량 (주)',min_value=0.,value=float(o['shares']),step=1.,format='%g',key='qty'+key)
                         amount=q*px_in*o['fx']
-                        st.markdown(f'<div class="ticket-amount"><span>주문금액</span><b>{amount:,.0f}원</b></div>',unsafe_allow_html=True)
-                        if st.button('체결 반영',key='fill'+key,use_container_width=True):
+                        st.markdown(f'<div class="ticket-amount"><span>주문금액</span><b class="{side}">{amount:,.0f}원<small class="ds-cap" style="display:block;text-align:right">약 {ui.won(o["amount"],unit=False)} · 제안 그대로{"" if q==o["shares"] else " 아님"}</small></b></div>',unsafe_allow_html=True)
+                        if st.button('체결 반영',key='fill'+key,type='primary',use_container_width=True):
                             try:
                                 updated,before,after=apply_fill(st.session_state.holdings,code,o['ticker'],o['side'],q,px_in*o['fx'])
                                 log=m.action(updated,code,o['ticker'],q,o['side'],day,before,after,px_in,o['fx'])
                                 install({'holdings':updated,'actions':pd.concat([st.session_state.actions,pd.DataFrame([log])],ignore_index=True)})
                                 st.session_state.valued={'date':str(day),'view':m.revalue(view,updated),'errors':result['errors']}
+                                st.session_state.rebal_filled=filled+[dict(code=code,name=o['name'],side=o['side'],shares=q,price=px_in,amount=amount)]
                                 error=persist()
-                                st.session_state.notice=f'{o["name"]} {o["side"]} {q:g}주 반영 · {before:g} → {after:g}. 현금은 체결가 × 수량만큼 조정했습니다.'+(f' (Sheets 저장 실패: {error})' if error else '')
+                                st.session_state['notice_error' if error else 'notice']=f'{o["name"]} {o["side"]} {q:g}주 반영 · {before:g} → {after:g}.'+saved_note(error)
                                 st.rerun()
                             except DataError as e:st.error(str(e))
-        st.caption('현금은 체결가 × 수량만큼 조정됩니다(수수료 제외). 실제 예수금과 다르면 4 · 마감의 대조에서 확인하세요.')
+        skipped=[d['code'] for d in todo if d['code'] not in confirmed]
+        if skipped:st.markdown(ui.card(''.join(f'<div class="ds-link"><span>{ui.chip(c)} {escape(name_of.get(c,c))}</span><small class="ds-label">진행 안 함 · 건너뜀</small></div>' for c in skipped)),unsafe_allow_html=True)
+        nav(2,'마감하러 가기',4,'s3')
     else:
-        st.caption('증권사 앱의 계좌 총액을 넣어 대조한 뒤 「이번 달 마감」을 누르면 평가가 기록되고 Sheets에 저장됩니다.')
-        entered={}
-        for i,account in enumerate(view.account.drop_duplicates().tolist()):
-            entered[account]=st.number_input(f'{account} 증권사 총액(원)',min_value=0.,step=10000.,format='%.0f',key=f'close_total{i}')
-        checked=m.reconcile(view,entered)
-        if not checked.empty:
-            st.dataframe(checked,hide_index=True,use_container_width=True,column_config={**{c:st.column_config.NumberColumn(format='localized') for c in ['앱 평가액','증권사 총액','차이']},'차이(%)':st.column_config.NumberColumn(format='%+.2f%%')})
+        total=view.value.sum() if view.value.notna().all() else None
+        record=m.last_record(st.session_state.snapshots,day);flow=performance.net_flow(st.session_state.cashflows,record[0],day) if record else 0
+        prev_label=f'{pd.Timestamp(record[0]).month}월 말 대비' if record else '지난 기록 대비'
+        extra=f'<p class="ds-cap">입금 {ui.won(flow,unit=False)} 제외 수익 {ui.change(total,record[1]+flow,pct=False)}</p>' if record and flow else ''
+        st.markdown(ui.card(f'<span class="ds-label">{day.month}월 말 총자산</span>{ui.won_big(total)}<div>{ui.change(total,record[1] if record else None,prev_label)}</div>{extra}'),unsafe_allow_html=True)
+        with st.container(key='close_check'):
+            st.markdown('<div class="ds-link"><h2 class="ds-h2">증권사 총액 대조</h2></div><p class="ds-cap">증권사 앱의 계좌 총액을 넣으면 0.5% 이하 차이는 「일치」. 금·현금·소액 계좌는 생략해도 돼요.</p>',unsafe_allow_html=True)
+            entered={}
+            for i,(account,sub) in enumerate(view.groupby('account',sort=False)):
+                entered[account]=st.number_input(f'{account} · 앱 {ui.won(sub.value.sum(),unit=False)}',min_value=0.,step=10000.,format='%.0f',key=f'close_total{i}')
+            checked=m.reconcile(view,entered)
+            if not checked.empty:
+                rows=''.join(f'<li><span>{escape(str(r["계좌"]))}<small class="ds-label"> 앱 {ui.won(r["앱 평가액"],unit=False)} · 증권사 {ui.won(r["증권사 총액"],unit=False)}</small></span><b>{ui.tag("일치","same") if r["판정"]=="일치" else ui.tag(f"{r['차이(%)']:+.1f}%","warn")}</b></li>' for _,r in checked.iterrows())
+                st.markdown(f'<div class="ds-assets" style="grid-template-columns:1fr"><ul>{rows}</ul></div>',unsafe_allow_html=True)
+        n_fill=len(filled)
+        st.markdown(ui.card(f'<b>마감하면 한 번에</b><p class="ds-cap">· {day.month}월 기록 1줄 저장 (계좌·자산군별 금액)<br>· 체결 {n_fill}건 수량 반영 · 시트 저장</p>'),unsafe_allow_html=True)
         memo=st.text_input('메모 (선택)',key='close_memo')
-        if st.button('이번 달 마감',type='primary',use_container_width=True):
+        if nav(3,'이번 달 마감',None,'s4'):
             try:
                 install({'snapshots':snapshot_table(view,day,memo)});refresh(day)
-                error=persist();st.session_state.rebal_confirmed=[];st.session_state.goto_step='2 · 할 일'
-                st.session_state.notice='이번 달을 마감했습니다. 평가를 기록했'+('지만 Sheets 저장에 실패했습니다: '+error if error else ('고 Sheets에 저장했습니다.' if connected and not st.session_state.demo else '습니다. (Sheets 미연결 · 전체 백업을 내려받으세요)'))
+                error=persist();st.session_state.rebal_confirmed=[];st.session_state.rebal_filled=[];st.session_state.rstep=1
+                st.session_state['notice_error' if error else 'notice']=f'{day.month}월을 마감했어요. 기록을 남겼어요.'+saved_note(error)
                 st.rerun()
             except DataError as e:st.error(str(e))
 

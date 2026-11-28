@@ -78,15 +78,17 @@ class UITests(unittest.TestCase):
    return pd.Series([100. if t=='SSO' else 1.],index=[pd.Timestamp(d)])
   with patch.object(m,'fetch_prices',side_effect=fetch):
    at.radio(key='page').set_value('월말 리밸런싱').run();self.assertFalse(at.exception)
-   plan=at.dataframe[0].value;self.assertEqual(plan.iloc[0]['구분'],'매수');self.assertEqual(plan.iloc[0]['수량'],1)
+   self.click(at,'판정 보기')
+   html=' '.join(x.value for x in at.markdown);self.assertIn('이번 달 할 일 1개',html);self.assertIn('매수 1주',html)
    self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[70.,30.])  # nothing changes before the click
-   self.click(at,'할 일 확정 → 체결 단계로')
-   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[85.,15.]);self.assertEqual(at.session_state['rebal_step'],'3 · 체결')
+   self.click(at,'체결하러 가기 (1개 계좌)')
+   self.assertEqual(at.session_state['holdings'].target_pct.tolist(),[85.,15.]);self.assertEqual(at.session_state['rstep'],3)
    next(b for b in at.button if b.label=='체결 반영').click().run();self.assertFalse(at.exception)
    self.assertEqual(at.session_state['holdings'].shares.tolist(),[8.,200.]);self.assertEqual(len(at.session_state['actions']),1)
    self.assertFalse(any(b.label=='체결 반영' for b in at.button))
-   at.radio(key='rebal_step').set_value('4 · 마감').run();self.click(at,'이번 달 마감')
-  self.assertEqual(len(at.session_state['snapshots']),2);self.assertEqual(at.session_state['rebal_step'],'2 · 할 일')
+   self.assertIn('주문 1건 중 1건 반영',' '.join(x.value for x in at.markdown))
+   self.click(at,'마감하러 가기');self.click(at,'이번 달 마감')
+  self.assertEqual(len(at.session_state['snapshots']),2);self.assertEqual(at.session_state['rstep'],1)
 
  def test_2027_accounts_on_monthly_rebalancing(self):
   import json
@@ -112,12 +114,13 @@ class UITests(unittest.TestCase):
    return pd.Series([base*(1+g)**(i/252) for i in range(len(idx))],index=idx)
   with patch.object(m,'fetch_prices',side_effect=fetch):
    at.radio(key='page').set_value('월말 리밸런싱').run();self.assertFalse(at.exception)
+   self.click(at,'판정 보기')
    html=' '.join(x.value for x in at.markdown)
    self.assertIn('위험 신호 0개 → 공격 100%',html)
    self.assertIn('133690·360750·411060',html)
    self.assertIn('SPY SMA 위 → TIGER 미국S&amp;P500레버리지(합성 H) 100%',html)
-   self.assertIn('할 일 없음',html)
-   self.click(at,'할 일 확정 → 체결 단계로')
+   self.assertIn('그대로',html)
+   self.click(at,'체결하러 가기 (2개 계좌)')
   daa=at.session_state['holdings'].query("strategy=='DAA'").set_index('ticker').target_pct
   self.assertAlmostEqual(daa['133690'],100/3,places=3);self.assertEqual(daa['476760'],0.)
   isa=at.session_state['holdings'].query("strategy=='ISA'").set_index('ticker').target_pct

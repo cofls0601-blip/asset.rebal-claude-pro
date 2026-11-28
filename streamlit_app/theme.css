@@ -184,3 +184,17 @@ html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important}
 .st-key-monthly_by [role="radiogroup"] label{padding:6px 14px!important;border-radius:10px;margin:0!important}
 .st-key-monthly_by [data-selected="true"]{background:#fff!important}
 .st-key-monthly_by [data-testid="stRadioOption"] div:has(+ [data-testid="stMarkdownContainer"]){display:none}
+/* Monthly rebalancing steps (design 2.0) */
+[class*="st-key-judge_"],[class*="st-key-fillcard_"],.st-key-step1_date,.st-key-close_check{background:var(--card);border-radius:20px;padding:18px;margin:0 0 12px;box-shadow:0 1px 2px rgba(25,31,40,.04);gap:.5rem!important}
+[class*="st-key-nav_"] [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;gap:10px}
+[class*="st-key-nav_"] [data-testid="stColumn"]{min-width:0!important;width:auto!important}
+[class*="st-key-nav_"] button{min-height:48px;font-size:16px!important;font-weight:700!important;border-radius:14px!important}
+[class*="st-key-nav_"] button[kind="secondary"]{background:#E9ECEF!important;border:0!important}
+.st-key-step1_date [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;gap:6px}.st-key-step1_date [data-testid="stColumn"]{min-width:0!important}
+.st-key-step1_date button{background:var(--brand-soft)!important;color:var(--brand)!important;border:0!important;font-size:13px!important;padding:4px 6px!important}
+[class*="st-key-ticket_buy"]{border:1.5px solid var(--up)!important}
+[class*="st-key-ticket_buy"] button[kind="primary"]{background:var(--up)!important;border-color:var(--up)!important}
+[class*="st-key-ticket_sell"] button[kind="primary"]{background:var(--down)!important;border-color:var(--down)!important}
+.ticket-amount b.buy{color:var(--up)}.ticket-amount b.sell{color:var(--down)}
+.ticket-side.buy{background:var(--up)!important}.ticket-side.sell{background:var(--down)!important}
+.ds-order.done{background:#F7F8FA}.ds-order.done .ds-order-icon{background:#C5CBD3}
