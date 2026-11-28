@@ -46,7 +46,11 @@ class UITests(unittest.TestCase):
   for page in ['홈','월말 리밸런싱','내 자산']:
    at.radio(key='page').set_value(page).run();self.assertFalse(at.exception)
   at.number_input(key='q_DEMO_360750').set_value(12).run()
-  next(b for b in at.button if b.label=='저장').click().run();self.assertFalse(at.exception)
+  shown=' '.join(x.value for x in at.markdown)
+  self.assertIn('예상 <span class="ds-w',shown)            # expected weight appears before saving
+  self.assertIn('54.5%',shown)                              # 12×100 of 2,200 in the DEMO account
+  self.assertEqual(at.session_state['holdings'].set_index('ticker').shares['360750'],0)  # nothing saved yet
+  next(b for b in at.button if b.label=='저장 (1개 바뀜)').click().run();self.assertFalse(at.exception)
   self.assertEqual(at.session_state['holdings'].set_index('ticker').shares['360750'],12)
   self.assertIn('전략',' '.join(x.value for x in at.markdown))
   at.radio(key='page').set_value('홈').run();self.assertFalse(at.exception)

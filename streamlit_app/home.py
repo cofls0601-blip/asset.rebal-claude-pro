@@ -78,3 +78,16 @@ def todo_kind(decision):
     cur=decision.get('current') or {};tgt=decision.get('targets') or {}
     up=[t for t in tgt if t!='CASH' and tgt[t]>cur.get(t,0)+.5];down=[t for t in tgt if t!='CASH' and tgt[t]<cur.get(t,0)-.5]
     return '사고팔기' if up and down else '매수' if up else '매도' if down else '비중 맞추기'
+
+
+def expected_weights(sub_view,shares):
+    """Weight (%) of each holding in its account if the quantities were `shares` {ticker: qty},
+    priced at the loaded quotes (CASH counts in won). None when a price is missing."""
+    values={}
+    for r in sub_view.itertuples():
+        q=float(shares.get(r.ticker,r.shares))
+        if r.ticker=='CASH':values[r.ticker]=q;continue
+        if pd.isna(r.close) or pd.isna(r.fx):return None
+        values[r.ticker]=q*float(r.close)*float(r.fx)
+    total=sum(values.values())
+    return {t:(v/total*100 if total else 0.) for t,v in values.items()},total

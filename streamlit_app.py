@@ -17,7 +17,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2.0 · 2026-11-28'
+APP_VERSION='2.0.1 · 2026-11-28'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -463,21 +463,39 @@ elif page=='내 자산':
             value=view.loc[view.account.eq(acct),'value'].sum() if view is not None and view.loc[view.account.eq(acct),'value'].notna().all() else None
             st.markdown(f'<div class="ds-link"><span><b class="ds-h2">{escape(acct)}</b> {ui.chip(code)}</span><b>{ui.won(value,unit=False)}</b></div>',unsafe_allow_html=True)
             st.button('전략 바꾸기 ›',on_click=open_fix,args=(code,),key='mine_change_rule')
-            with st.form('qty'+code+str(st.session_state.revision)):
-                new_shares={}
-                for r in sub.itertuples():
-                    cash=r.ticker=='CASH';gold=r.ticker==m.GOLD_TICKER
-                    label=f'{r.name} · ' + ('현금 · 원' if cash else f'{r.ticker} · {r.category} · 목표 {r.target_pct:g}%'+(' · g' if gold else ''))
-                    step=10000. if cash else (.1 if gold or (r.market=="US" and bool(dict(zip(conf.code,conf.fractional_us)).get(code,False)) if 'fractional_us' in conf else gold) else 1.)
-                    new_shares[r.Index]=st.number_input(label,min_value=0.,value=float(r.shares),step=step,format='%.0f' if cash else '%g',key=f'q_{code}_{r.ticker}')
-                a,b=st.columns([1,1])
-                b_save=b.form_submit_button('저장',type='primary',use_container_width=True)
-                if b_save:
-                    try:
-                        updated=h.copy()
-                        for idx,q in new_shares.items():updated.loc[idx,'shares']=q
-                        st.session_state.demo=False;apply({'holdings':m.validate_holdings(updated)},f'{acct} 수량을 저장했어요.')
-                    except DataError as e:st.error(str(e))
+            # One row per holding (name, code · class · target, −/+ box). No form, so every change
+            # redraws at once with the account weight the new quantities would give.
+            frac=bool(dict(zip(conf.code,conf.fractional_us)).get(code,False)) if 'fractional_us' in conf else False
+            new_shares={};slots=[]
+            for r in sub.itertuples():
+                cash=r.ticker=='CASH';gold=r.ticker==m.GOLD_TICKER
+                with st.container(key=f'qrow_{code}_{r.ticker}'):
+                    left,right=st.columns([3,2],vertical_alignment='center')
+                    step=10000. if cash else .1 if gold else .0001 if frac and r.market=='US' else 1.
+                    new_shares[r.ticker]=right.number_input(f'{r.name} 수량',min_value=0.,value=float(r.shares),step=step,format='%.0f' if cash else '%g',key=f'q_{code}_{r.ticker}',label_visibility='collapsed')
+                    slots.append((left.empty(),r,cash,gold))
+            sv=view[view.account.eq(acct)] if view is not None else None
+            exp=home.expected_weights(sv,new_shares) if sv is not None and len(sv)==len(sub) else None
+            now=dict(zip(sv.ticker,sv.weight)) if sv is not None else {}
+            dirty=[t for t in new_shares if abs(new_shares[t]-float(sub.set_index("ticker").shares[t]))>1e-9]
+            for slot,r,cash,gold in slots:
+                changed=r.ticker in dirty
+                sub_line='현금 · 원' if cash else f'{escape(r.ticker)} · {escape(r.category)}'+(' · g' if gold else '')
+                sub_line+=f' · 목표 {r.target_pct:g}%'
+                if exp:
+                    weight=ui.weight_text(exp[0][r.ticker],r.target_pct).replace(f' / {r.target_pct:g}%','')
+                    # Once any quantity changes, every row's share is an estimate (the account total moves).
+                    est=f'<small class="ds-q-est">{"예상" if dirty else "지금"} {weight}'+(f' <span class="ds-label">(지금 {now.get(r.ticker,0):.1f}%)</span>' if dirty else '')+'</small>'
+                else:est='<small class="ds-q-est ds-label">가격을 불러오면 비중이 나와요</small>'
+                slot.markdown(f'<div class="ds-q"><b>{escape(r.name)}{" "+ui.tag("변경","brand") if changed else ""}</b><small>{sub_line}</small>{est}</div>',unsafe_allow_html=True)
+            if exp and dirty:
+                st.markdown(f'<p class="ds-cap">바꾼 수량으로 계산한 예상 평가액 <b style="color:var(--text)">{ui.won(exp[1],unit=False)}</b> · 지금 가격 기준</p>',unsafe_allow_html=True)
+            if st.button('저장' if not dirty else f'저장 ({len(dirty)}개 바뀜)',type='primary',use_container_width=True,key='mine_save',disabled=not dirty):
+                try:
+                    updated=h.copy()
+                    for r in sub.itertuples():updated.loc[r.Index,'shares']=new_shares[r.ticker]
+                    st.session_state.demo=False;apply({'holdings':m.validate_holdings(updated)},f'{acct} 수량을 저장했어요.')
+                except DataError as e:st.error(str(e))
             with st.expander('+ 종목 검색·추가'):
                 asset=picker('mine'+code)
                 with st.form('mine_add'+code):

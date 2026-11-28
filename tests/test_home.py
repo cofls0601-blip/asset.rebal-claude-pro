@@ -44,4 +44,10 @@ class HomeTests(unittest.TestCase):
         self.assertEqual(home.todo_kind(dict(current={'A':70,'CASH':30},targets={'A':85,'CASH':15})),'매수')
         self.assertEqual(home.todo_kind(dict(current={'A':25,'CASH':0},targets={'A':0,'CASH':25})),'매도')
 
+    def test_expected_weights_follow_new_quantities(self):
+        v=pd.DataFrame([dict(ticker='A',shares=1,close=100.,fx=1.),dict(ticker='B',shares=1,close=10.,fx=10.),dict(ticker='CASH',shares=200,close=1.,fx=1.)])
+        w,total=home.expected_weights(v,{'A':3})                 # A 300, B 100, cash 200
+        self.assertEqual(total,600);self.assertAlmostEqual(w['A'],50);self.assertAlmostEqual(w['CASH'],100/3)
+        self.assertIsNone(home.expected_weights(v.assign(close=[float('nan'),10.,1.]),{}))
+
 if __name__=='__main__':unittest.main()

@@ -211,3 +211,11 @@ html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important}
 .st-key-mine_acct_card [data-testid="stForm"]{border:0;padding:0;background:transparent}
 .st-key-mine_acct_card [data-testid="stNumberInput"] input{text-align:right;font-variant-numeric:tabular-nums}
 .st-key-fix_card [data-testid="stHorizontalBlock"],.st-key-mine_acct_card [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;gap:10px}.st-key-fix_card [data-testid="stColumn"],.st-key-mine_acct_card [data-testid="stColumn"]{min-width:0!important}
+/* 내 자산 holding rows: name and gray line left, −/+ box right, expected weight under the name */
+[class*="st-key-qrow_"]{border-top:1px solid var(--line);padding:10px 0 6px}
+[class*="st-key-qrow_"] [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;gap:10px;align-items:center}
+[class*="st-key-qrow_"] [data-testid="stColumn"]{min-width:0!important}
+.ds-q b{display:block;font-size:15px;font-weight:700;color:var(--text);line-height:1.35;overflow-wrap:anywhere}
+.ds-q small{display:block;font-size:12px;color:var(--text3);margin-top:2px;line-height:1.35}
+.ds-q .ds-q-est{font-size:13px;margin-top:4px}.ds-q .ds-q-est .ds-w{font-size:13px}
+[class*="st-key-qrow_"] [data-testid="stNumberInput"] input{text-align:right;font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
