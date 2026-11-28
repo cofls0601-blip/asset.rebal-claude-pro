@@ -17,7 +17,7 @@ from streamlit_app.ledger import TABLES, empty_workspace, backup_bytes, restore_
 from streamlit_app.sheets_sync import load_workspace, save_workspace
 from streamlit_app.template import apply_template, load_template, mapping_table
 
-APP_VERSION='2.0.1 · 2026-11-28'
+APP_VERSION='2.0.2 · 2026-11-28'
 st.set_page_config(page_title='Rebalance · 자산배분',page_icon='◈',layout='wide')
 st.markdown('<style>'+Path(__file__).with_name('streamlit_app').joinpath('theme.css').read_text()+'</style>',unsafe_allow_html=True)
 
@@ -75,10 +75,6 @@ def refresh(day):
     v,errors=m.valuation(st.session_state.holdings,day,prices)
     st.session_state.valued={'date':str(day),'view':v,'errors':errors}
 
-def price_columns(columns):
-    return {c:st.column_config.NumberColumn(format='localized') for c in columns
-            if c in ['종가','10개월 SMA','close','sma10','actual_price','평가액','value','actual_amount','planned_amount']}
-
 def persist():
     """Save to Sheets when connected; returns an error message or None."""
     if not connected or st.session_state.demo:return None
@@ -96,7 +92,9 @@ def snapshot_table(view,day,memo):
     return pd.concat([old,new],ignore_index=True)
 
 def table(frame):
-    st.dataframe(frame,hide_index=True,use_container_width=True,column_config=price_columns(frame.columns))
+    """Read-only table; every numeric column gets thousands separators."""
+    numeric=[c for c in frame.columns if pd.api.types.is_numeric_dtype(frame[c]) and not pd.api.types.is_bool_dtype(frame[c])]
+    st.dataframe(frame,hide_index=True,use_container_width=True,column_config={c:st.column_config.NumberColumn(format='localized') for c in numeric})
 def picker(key):
     market=st.selectbox('시장',['KR','US'],format_func=lambda x:'한국 · 원화' if x=='KR' else '미국 · 달러',key=key+'market')
     mode=st.radio('검색 방식',['티커','종목명'],horizontal=True,key=key+'mode')
@@ -313,7 +311,7 @@ elif page=='월말 리밸런싱' and view is not None:
             lines=''
             for o in orders:
                 lines+=ui.order_line(o['side'],o['name'],o['shares'],o['amount'])
-                if o.get('cut'):lines+=f'<p class="ds-cap" style="color:var(--up);margin:-4px 0 6px 52px">현금 부족으로 {o["cut"]:g}주 줄임</p>'
+                if o.get('cut'):lines+=f'<p class="ds-cap" style="color:var(--up);margin:-4px 0 6px 52px">현금 부족으로 {o["cut"]:,g}주 줄임</p>'
             cash=float(sub.loc[sub.ticker.eq('CASH'),'value'].sum())+sum(o['amount'] if o['side']=='매도' else -o['amount'] for o in orders);total=float(sub.value.sum())
             left=f'<div class="ds-link ds-cap" style="font-size:13px;margin-top:6px"><span>매매 후 남는 현금</span><b style="color:var(--text)">{ui.won(cash,unit=False)} ({cash/total*100 if total else 0:.1f}%)</b></div>' if orders else ''
             with st.container(key=f'judge_{d["code"]}'):
@@ -369,7 +367,7 @@ elif page=='월말 리밸런싱' and view is not None:
                                 st.session_state.valued={'date':str(day),'view':m.revalue(view,updated),'errors':result['errors']}
                                 st.session_state.rebal_filled=filled+[dict(code=code,name=o['name'],side=o['side'],shares=q,price=px_in,amount=amount)]
                                 error=persist()
-                                st.session_state['notice_error' if error else 'notice']=f'{o["name"]} {o["side"]} {q:g}주 반영 · {before:g} → {after:g}.'+saved_note(error)
+                                st.session_state['notice_error' if error else 'notice']=f'{o["name"]} {o["side"]} {q:,g}주 반영 · {before:,g} → {after:,g}.'+saved_note(error)
                                 st.rerun()
                             except DataError as e:st.error(str(e))
         skipped=[d['code'] for d in todo if d['code'] not in confirmed]
@@ -509,7 +507,7 @@ elif page=='내 자산':
         if not gold.empty:
             g=float(gold.shares.sum());per=view.loc[view.ticker.eq(m.GOLD_TICKER)] if view is not None else pd.DataFrame()
             per_g=float(per.close.iloc[0]*per.fx.iloc[0]) if not per.empty and pd.notna(per.close.iloc[0]) else None
-            st.markdown(f'<div class="ds-link"><span><b>금 현물</b><small>{g:g}g × 국제시세{" · 1g 약 "+ui.won(per_g,unit=False) if per_g else ""}</small></span></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="ds-link"><span><b>금 현물</b><small>{g:,g}g × 국제시세{" · 1g 약 "+ui.won(per_g,unit=False) if per_g else ""}</small></span></div>',unsafe_allow_html=True)
             st.button('금 g 수 수정 ›',on_click=pick_account,args=(str(gold.account.iloc[0]),),key='mine_gold')
         cf=st.session_state.cashflows;principal=performance.summary(1.,cf,day)
         st.markdown(f'<div class="ds-link" style="margin-top:8px"><span><b>입출금 기록</b><small>날짜·계좌·금액·메모{" · 원금 "+ui.won(principal["principal"],unit=False) if principal else ""}</small></span></div>',unsafe_allow_html=True)
@@ -564,7 +562,7 @@ elif page=='내 자산':
                 labels={'ticker':'티커','name':'종목명','market':'시장','category':'자산 분류','role':'역할','shares':'보유수량','target_pct':'목표비중 (%)'}
                 shown=sub[list(labels)].rename(columns=labels)
                 with st.form('edit_assets'+code+str(st.session_state.revision)):
-                    edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['티커','시장'],column_config={'자산 분류':st.column_config.SelectboxColumn(options=list(dict.fromkeys(m.CATEGORIES+sub.category.tolist()))),'보유수량':st.column_config.NumberColumn(min_value=0.,format='%.4f'),'목표비중 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%.2f')})
+                    edited=st.data_editor(shown,hide_index=True,use_container_width=True,disabled=['티커','시장'],column_config={'자산 분류':st.column_config.SelectboxColumn(options=list(dict.fromkeys(m.CATEGORIES+sub.category.tolist()))),'보유수량':st.column_config.NumberColumn(min_value=0.,format='localized'),'목표비중 (%)':st.column_config.NumberColumn(min_value=0.,max_value=100.,format='%.2f')})
                     st.caption(f'현재 저장된 목표비중 합계 {sub.target_pct.sum():.2f}% · 합계 100%가 아니어도 작성 중인 계획을 저장할 수 있습니다.')
                     if st.form_submit_button('보유수량·목표비중 적용'):
                         try:

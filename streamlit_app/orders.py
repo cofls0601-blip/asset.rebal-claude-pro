@@ -33,7 +33,7 @@ def plan_orders(sub,targets,fractional_us=False):
         r=rows[o['ticker']];less=min(o['shares'],math.ceil(need/o['price']/step(r))*step(r))
         o['shares']-=less;o['cut']+=less;o['amount']=o['shares']*o['price']
     for o in buys:
-        if o['cut']:notes.append(f'{o["name"]}: 현금 부족으로 {o["cut"]:g}주 줄임')
+        if o['cut']:notes.append(f'{o["name"]}: 현금 부족으로 {o["cut"]:,g}주 줄임')
     orders+=[o for o in buys if o['shares']>0]
     return orders,notes
 

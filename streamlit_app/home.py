@@ -39,7 +39,7 @@ def account_list(view,judged,checks,day_change):
         value=sub.value.sum() if sub.value.notna().all() else None
         name=str(sub.account.iloc[0])
         if code=='GOLD' and (sub.ticker==GOLD_TICKER).any():
-            grams=float(sub.loc[sub.ticker.eq(GOLD_TICKER),'shares'].sum());name=f'{name} {grams:g}g' if grams else name
+            grams=float(sub.loc[sub.ticker.eq(GOLD_TICKER),'shares'].sum());name=f'{name} {grams:,g}g' if grams else name
         rows+=(f'<details><summary><span class="ds-dot" style="background:{ui.strategy_color(code)}"></span>'
                f'<span class="ds-acct-name"><b>{escape(name)}</b><small>{ui.chip(code)} {account_status(code,judged.get(code),checks.get(code))}</small></span>'
                f'<span class="ds-acct-val"><b>{ui.won(value,unit=False)}</b>{ui.pct_change(day_change.get(code))}</span></summary>'
